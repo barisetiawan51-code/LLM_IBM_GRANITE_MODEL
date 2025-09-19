@@ -36,14 +36,32 @@ Dataset yang digunakan berasal dari Kaggle dengan judul Job Dataset from Kaggle:
 22. Company Name: Nama perusahaan yang merekrut.
 23. Company Profile: Gambaran singkat tentang latar belakang dan misi perusahaan.
 
+## Permasalahan Data
+1. Ukuran Dataset yang Sangat Besar
+   * Dataset berisi lebih dari 1,6 juta job postings.
+   * Tidak semua informasi bisa diproses LLM karena keterbatasan panjang input (context window).
+2. Keterbatasan Dokumen pada LLM
+   * IBM Granite hanya bisa menerima beberapa ribu karakter konteks.
+   * Akibatnya, hanya sebagian kecil lowongan bisa dipakai dalam sekali query yang berpotensi membuat jawaban kurang lengkap.
+3. Variasi Format & Inkonstistensi
+   * Pengalaman kerja ditulis dalam range berbeda (contoh: “0 to 15 Years”, “3 to 13 Years”).
+   * Deskripsi lowongan bervariasi seperti ada yang detail sekali dan ada juga yang sangat singkat.
+5. Dominasi Kata Kunci Umum
+   * Word cloud memperlihatkan kata seperti “social media”, “user interface”, dan “compliance” sangat dominan.
+   * Kata-kata umum ini bisa menutupi skill teknis yang lebih spesifik (misalnya Python, TensorFlow, Docker).
+   * 
 ## Insights & Findings
 Beberapa temuan penting dari analisis awal yaitu:
 1. 
 
 ## AI Support Explanation
-Dalam proyek ini, AI (IBM Granite LLM) digunakan untuk:
-1. Menjawab pertanyaan berbasis konteks seputar lowongan kerja yang jumlahnya sangat besar.
-2. Membatasi input dokumen agar tetap efisien (hanya beberapa dokumen relevan yang dipakai).
+1. LLM (IBM Granite) digunakan untuk:
+    * Menjawab pertanyaan seputar skill, gaji, dan perbandingan pekerjaan.
+    * Memberi evaluasi kualitas jawaban (LLM-as-a-Judge).
+2. Karena keterbatasan input panjang, digunakan strategi batasi jumlah dokumen & panjang teks agar tetap efisien.
 3. Membantu mengatasi keterbatasan manusia dalam membaca jutaan baris data secara manual.
-4. Evaluasi otomatis hasil jawaban dengan metrik tekstual & embedding.
-5. Memberikan evaluasi kualitas jawaban agar hasil analisis tetap terukur (bukan hanya opini model).
+4. Evaluasi otomatis hasil jawaban dengan metrik tekstual & embedding serta memberikan evaluasi kualitas jawaban agar hasil analisis tetap terukur (bukan hanya opini model). Evaluasi dilakukan dengan kombinasi:
+    * Cosine Similarity (TF-IDF)
+    * ROUGE Score
+    * Semantic Embedding Similarity
+    * LLM-as-a-Judge
