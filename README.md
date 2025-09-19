@@ -35,3 +35,15 @@ Dataset yang digunakan berasal dari Kaggle dengan judul Job Dataset from Kaggle:
 21. Responsibilities: Tanggung jawab dan tugas spesifik yang terkait dengan pekerjaan.
 22. Company Name: Nama perusahaan yang merekrut.
 23. Company Profile: Gambaran singkat tentang latar belakang dan misi perusahaan.
+
+## Insights & Findings
+Beberapa temuan penting dari analisis awal yaitu:
+1. 
+
+## AI Support Explanation
+Dalam proyek ini, AI (IBM Granite LLM) digunakan untuk:
+1. Menjawab pertanyaan berbasis konteks seputar lowongan kerja yang jumlahnya sangat besar.
+2. Membatasi input dokumen agar tetap efisien (hanya beberapa dokumen relevan yang dipakai).
+3. Membantu mengatasi keterbatasan manusia dalam membaca jutaan baris data secara manual.
+4. Evaluasi otomatis hasil jawaban dengan metrik tekstual & embedding.
+5. Memberikan evaluasi kualitas jawaban agar hasil analisis tetap terukur (bukan hanya opini model).
