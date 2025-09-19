@@ -12,7 +12,7 @@ Data lowongan pekerjaan merupakan salah satu sumber informasi penting untuk mema
 Namun, data semacam ini biasanya tidak terstruktur dengan baik, bervariasi formatnya, serta mengandung noise (contoh: gaji yang tidak konsisten, deskripsi terlalu panjang/pendek). Maka diperlukan pendekatan analisis data dan NLP agar informasi yang ada bisa diolah menjadi pengetahuan yang berguna.
 
 ## Raw Dataset (Link Dataset: [Job Dataset](https://www.kaggle.com/datasets/ravindrasinghrana/job-description-dataset/data))
-Dataset yang digunakan berasal dari Kaggle dengan judul Job Dataset from Kaggle: Ravender Singh Rana. Dataset ini berisi informasi seperti berikut:
+Dataset yang digunakan berasal dari Kaggle dengan judul Job Dataset oleh Ravender Singh Rana. Dataset ini berisi informasi seperti berikut:
 1. Job ID: Pengidentifikasi unik untuk setiap lowongan pekerjaan.
 2. Experience: Lamanya tahun pengalaman yang dibutuhkan atau diutamakan untuk pekerjaan tersebut.
 3. Qualifications: Kualifikasi pendidikan yang dibutuhkan untuk pekerjaan tersebut.
