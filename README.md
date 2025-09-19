@@ -3,11 +3,11 @@
 ## Project Overview
 
 Data lowongan pekerjaan merupakan salah satu sumber informasi penting untuk memahami kebutuhan pasar tenaga kerja. informasi seperti judul pekerjaan, kualifikasi, pengalaman, lokasi, gaji, keterampilan serta deskripsi pekerjaan dapat membantu hal-hal sebagai berikut:
-*   Membantu perusahaan dalam strategi rekrutmen dan perencanaan SDM.
-*   Membantu kandidat dalam memahami  tren keterampilan yang paling dibutuhkan.
-*   Membantu peneliti dan praktisi AI dalam pengembangan model NLP untuk klasifikasi teks, pencarian lowongan kerja dan sistem rekomendasi.
-*   Analisis pasar kerja global menggunakan dataset lowongan kerja dan IBM Granite LLM.
-*   Mengeksplorasi skill yang paling dibutuhkan, kisaran gaji, serta perbandingan antar profesi, sekaligus mengevaluasi performa LLM dengan metrik otomatis dan penilaian berbasis AI.
+1. Membantu perusahaan dalam strategi rekrutmen dan perencanaan SDM.
+2. Membantu kandidat dalam memahami  tren keterampilan yang paling dibutuhkan.
+3. Membantu peneliti dan praktisi AI dalam pengembangan model NLP untuk klasifikasi teks, pencarian lowongan kerja dan sistem rekomendasi.
+4. Analisis pasar kerja global menggunakan dataset lowongan kerja dan IBM Granite LLM.
+5. Mengeksplorasi skill yang paling dibutuhkan, kisaran gaji, serta perbandingan antar profesi, sekaligus mengevaluasi performa LLM dengan metrik otomatis dan penilaian berbasis AI.
 Namun, data semacam ini biasanya tidak terstruktur dengan baik, bervariasi formatnya, serta mengandung noise (contoh: gaji yang tidak konsisten, deskripsi terlalu panjang/pendek). Maka diperlukan pendekatan analisis data dan NLP agar informasi yang ada bisa diolah menjadi pengetahuan yang berguna.
 
 ## Raw Dataset (Link Dataset: [Job Dataset](https://www.kaggle.com/datasets/ravindrasinghrana/job-description-dataset/data))
@@ -49,10 +49,16 @@ Dataset yang digunakan berasal dari Kaggle dengan judul Job Dataset from Kaggle:
 5. Dominasi Kata Kunci Umum
    * Word cloud memperlihatkan kata seperti “social media”, “user interface”, dan “compliance” sangat dominan.
    * Kata-kata umum ini bisa menutupi skill teknis yang lebih spesifik (misalnya Python, TensorFlow, Docker).
-   * 
+     
 ## Insights & Findings
 Beberapa temuan penting dari analisis awal yaitu:
-1. 
+1. Kualifikasi pendidikan ini menunjukkan bahwa jumlah lowongan kerja berdasarkan kualifikasi relatif merata di semua tingkat pendidikan (BBA, BA, BCA, M.Tech, PhD, MBA, B.Tech, M.Com, B.Com, MCA). Tidak ada jurusan atau gelar yang dominan secara signifikan, menandakan bahwa pasar kerja membuka peluang luas untuk berbagai latar belakang pendidikan. Hal ini juga mengindikasikan bahwa faktor lain seperti pengalaman, skill, dan peran pekerjaan lebih berpengaruh dibandingkan hanya tingkat pendidikan formal.
+2. Minimum salary cenderung stabil dengan rentang yang relatif kecil (sekitar 55K–65K), sedangkan maximum salary memiliki variasi yang jauh lebih besar (sekitar 80K–130K). Artinya, batas bawah gaji cukup konsisten, tetapi batas atas gaji sangat bervariasi tergantung pada posisi, pengalaman, atau industri. Hal ini menandakan adanya peluang besar untuk peningkatan gaji pada level yang lebih tinggi, meskipun titik masuknya relatif seragam.
+3. Banyak lowongan kerja menuntut fokus pada user interface, user experience, dan social media, serta kepatuhan terhadap compliance. Selain itu, keterampilan dalam digital marketing, web application, dan interaction design juga muncul dominan. Hal ini menunjukkan bahwa pasar kerja modern sangat menekankan kombinasi antara teknologi, desain, dan pemasaran digital untuk meningkatkan pengalaman pengguna sekaligus menjaga kepatuhan bisnis.
+4. perusahaan sangat menekankan soft skills seperti communication skills, problem-solving, dan attention to detail, disamping hard skills seperti data analysis, design principles, software proficiency, dan market research. Hal ini menunjukkan bahwa kandidat yang menguasai keterampilan teknis sekaligus memiliki kemampuan komunikasi dan kolaborasi akan lebih diminati di pasar kerja.
+5. Pekerjaan di bidang teknologi seperti UX/UI Designer, Software Engineer, Network Engineer, dan Software Tester mendominasi pasar kerja. Namun, posisi non-teknis seperti Digital Marketing Specialist, Key Account Manager, Procurement Coordinator, dan Personal Assistant juga tetap menunjukkan permintaan yang signifikan.
+6. Posting pekerjaan paling banyak terjadi pada awal tahun (Q1) dan pertengahan tahun (Q3), dengan frekuensi lebih tinggi pada hari kerja dibanding akhir pekan. Hal ini menunjukkan pola musiman dalam perekrutan.
+
 
 ## AI Support Explanation
 1. LLM (IBM Granite) digunakan untuk:
