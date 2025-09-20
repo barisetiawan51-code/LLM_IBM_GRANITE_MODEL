@@ -2,14 +2,15 @@
 
 ## Project Overview
 
-Data lowongan pekerjaan merupakan salah satu sumber informasi penting untuk memahami kebutuhan pasar tenaga kerja. informasi seperti judul pekerjaan, kualifikasi, pengalaman, lokasi, gaji, keterampilan serta deskripsi pekerjaan dapat membantu hal-hal sebagai berikut:
-1. Membantu perusahaan dalam strategi rekrutmen dan perencanaan SDM.
-2. Membantu kandidat dalam memahami  tren keterampilan yang paling dibutuhkan.
-3. Membantu peneliti dan praktisi AI dalam pengembangan model NLP untuk klasifikasi teks, pencarian lowongan kerja dan sistem rekomendasi.
-4. Analisis pasar kerja global menggunakan dataset lowongan kerja dan IBM Granite LLM.
-5. Mengeksplorasi skill yang paling dibutuhkan, kisaran gaji, serta perbandingan antar profesi, sekaligus mengevaluasi performa LLM dengan metrik otomatis dan penilaian berbasis AI.
+Data lowongan pekerjaan merupakan sumber informasi penting untuk memahami kebutuhan dan tren pasar tenaga kerja. Informasi seperti judul pekerjaan, kualifikasi, pengalaman, lokasi, gaji, keterampilan, hingga deskripsi pekerjaan bermanfaat bagi berbagai pihak: perusahaan untuk strategi rekrutmen, kandidat untuk mengetahui tren keterampilan yang dibutuhkan, dan peneliti untuk mengembangkan model NLP maupun sistem rekomendasi. Namun, data ini sering kali tidak terstruktur, bervariasi formatnya, dan mengandung noise, sehingga diperlukan pendekatan analisis data dan Large Language Model (LLM) agar dapat diolah menjadi insight yang berguna.
 
-Namun, data semacam ini biasanya tidak terstruktur dengan baik, bervariasi formatnya, serta mengandung noise (contoh: gaji yang tidak konsisten, deskripsi terlalu panjang/pendek). Maka diperlukan pendekatan analisis data dan NLP agar informasi yang ada bisa diolah menjadi pengetahuan yang berguna.
+Tujuan proyek ini adalah melakukan analisis tren pasar kerja berdasarkan lokasi, gaji, jenis pekerjaan, dan perusahaan; mengklasifikasikan role pekerjaan dari deskripsi menggunakan NLP; mengembangkan sistem rekomendasi lowongan berbasis keterampilan kandidat; serta mengevaluasi kualitas jawaban LLM dan mengidentifikasi keterbatasan data maupun model. Dengan capaian tersebut, proyek diharapkan mampu menghasilkan insight yang akurat, rekomendasi relevan, serta mendukung keputusan berbasis data.
+
+Beberapa tantangan yang dihadapi antara lain adanya missing value, ketidakseragaman format data (gaji, tanggal, lokasi), noise dalam teks, serta keterbatasan context window LLM yang membuat sebagian data tidak bisa diproses penuh. Selain itu, terdapat masalah multi-label classification karena satu deskripsi pekerjaan dapat terkait dengan lebih dari satu kategori.
+
+Untuk mengatasi hal tersebut, digunakan pendekatan end-to-end LLM Workflow yang mencakup: data preparation untuk pembersihan, EDA untuk analisis pola, feature engineering dan preprocessing untuk menyiapkan teks sesuai kapasitas LLM, training atau prompting dengan IBM Granite, testing untuk uji performa, evaluation dengan metrik kuantitatif (Cosine Similarity, ROUGE, Semantic Similarity) maupun kualitatif (LLM as a Judge), hingga tahap deployment agar dapat diimplementasikan dalam aplikasi nyata.
+
+Dengan pendekatan ini, proyek dapat memberikan proses yang terstruktur dan terukur, menghasilkan analisis yang lebih tajam, meningkatkan akurasi klasifikasi role pekerjaan, serta menghadirkan sistem rekomendasi lowongan yang relevan dan siap digunakan.
 
 ## Raw Dataset (Link Dataset: [Job Dataset](https://www.kaggle.com/datasets/ravindrasinghrana/job-description-dataset/data))
 Dataset yang digunakan berasal dari Kaggle dengan judul Job Dataset oleh Ravender Singh Rana. Dataset ini berisi informasi seperti berikut:
