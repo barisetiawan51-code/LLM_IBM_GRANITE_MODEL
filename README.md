@@ -61,14 +61,22 @@ Beberapa temuan penting dari analisis awal yaitu:
 5. Pekerjaan di bidang teknologi seperti UX/UI Designer, Software Engineer, Network Engineer, dan Software Tester mendominasi pasar kerja. Namun, posisi non-teknis seperti Digital Marketing Specialist, Key Account Manager, Procurement Coordinator, dan Personal Assistant juga tetap menunjukkan permintaan yang signifikan.
 6. Posting pekerjaan paling banyak terjadi pada awal tahun (Q1) dan pertengahan tahun (Q3), dengan frekuensi lebih tinggi pada hari kerja dibanding akhir pekan. Hal ini menunjukkan pola musiman dalam perekrutan.
 
-
 ## AI Support Explanation
-1. LLM (IBM Granite) digunakan untuk:
-    * Menjawab pertanyaan seputar skill, gaji, dan perbandingan pekerjaan.
-    * Memberi evaluasi kualitas jawaban (LLM-as-a-Judge).
-2. Karena keterbatasan input panjang, digunakan strategi batasi jumlah dokumen & panjang teks agar tetap efisien.
-3. Membantu mengatasi keterbatasan manusia dalam membaca jutaan baris data secara manual.
-4. Evaluasi otomatis hasil jawaban dengan metrik tekstual & embedding serta memberikan evaluasi kualitas jawaban agar hasil analisis tetap terukur (bukan hanya opini model). Evaluasi dilakukan dengan kombinasi:
+1. Classification (Klasifikasi Lowongan)
+    * LLM mengelompokkan lowongan kerja berdasarkan job title, level pengalaman, dan lokasi geografis.
+    * Contoh: Menentukan apakah suatu lowongan termasuk kategori IT, Digital Marketing, atau Finance.
+2. Summarization (Ringkasan Konten Lowongan)
+    * LLM merangkum deskripsi pekerjaan, tanggung jawab, benefit, dan skill yang dibutuhkan untuk mempermudah analisis tren dan pola.
+    * Contoh: Dari ratusan ribu lowongan, LLM menghasilkan ringkasan yang menyoroti skill paling dicari dan benefit yang sering ditawarkan.
+3. Insight Analysis (Analisis Daya Tarik Lowongan)
+   * LLM menganalisis konten lowongan untuk mengidentifikasi faktor-faktor yang meningkatkan daya tarik, seperti fleksibilitas kerja, kompensasi, dan soft skill yang dihargai.
+   * Contoh: Menentukan apakah lowongan lebih menekankan kompensasi finansial atau benefit non-finansial sebagai daya tarik utama.
+5. Menjawab Pertanyaan Spesifik
+    * LLM membantu menjawab pertanyaan terkait skill, gaji, dan perbandingan pekerjaan, sehingga mempermudah pengambilan keputusan berbasis data.
+6. Efisiensi Pengolahan Data Besar
+    * Strategi pembatasan jumlah dokumen dan panjang teks digunakan agar proses tetap efisien.
+    * Membantu mengatasi keterbatasan manusia dalam membaca jutaan baris data secara manual.
+7. Evaluasi otomatis hasil jawaban dengan metrik tekstual & embedding serta memberikan evaluasi kualitas jawaban agar hasil analisis tetap terukur (bukan hanya opini model). Evaluasi dilakukan dengan kombinasi:
     * Cosine Similarity (TF-IDF)
     * ROUGE Score
     * Semantic Embedding Similarity
