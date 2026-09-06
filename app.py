@@ -1,5 +1,4 @@
 import os
-import duckdb
 import pandas as pd
 import streamlit as st
 from sqlalchemy import create_engine, text
@@ -30,7 +29,7 @@ if not hf_token:
 
 
 # ======================================
-# 2. Inisialisasi DuckDB Native Persisten & SQLDatabase
+# 2. Inisialisasi DuckDB via Shared SQLAlchemy Connection Engine
 # ======================================
 @st.cache_resource
 def get_db():
@@ -43,23 +42,23 @@ def get_db():
             token=hf_token
         )
         
-        # 1. Buat koneksi native DuckDB tunggal di memori
-        shared_conn = duckdb.connect(":memory:")
-        shared_conn.execute("SET unsafe_disable_etag_checks = true;")
-        shared_conn.execute(f"CREATE VIEW jobs AS SELECT * FROM read_parquet('{local_parquet_path}');")
+        # Buat engine SQLAlchemy untuk DuckDB in-memory
+        engine = create_engine("duckdb:///:memory:")
         
-        # 2. Paksa SQLAlchemy menggunakan koneksi native yang sama (mencegah DuckDB reset memori)
-        engine = create_engine("duckdb:///:memory:", creator=lambda: shared_conn)
+        # Buka koneksi persisten dari pool agar memori database tidak di-reset
+        conn = engine.connect()
+        conn.execute(text("SET unsafe_disable_etag_checks = true;"))
+        conn.execute(text(f"CREATE VIEW jobs AS SELECT * FROM read_parquet('{local_parquet_path}');"))
         
-        # 3. Inisialisasi SQLDatabase dari LangChain
+        # Inisialisasi SQLDatabase dari engine
         db = SQLDatabase(engine)
-        return db, shared_conn
+        return db, engine, conn
         
     except Exception as e:
         st.error(f"Gagal mengunduh/memuat Parquet: {e}")
         st.stop()
 
-db, shared_conn = get_db()
+db, engine, persistent_conn = get_db()
 
 
 # ======================================
@@ -113,8 +112,8 @@ if st.button("Tanyakan", type="primary"):
 # ======================================
 with st.expander("📊 Lihat data awal (5 Baris Pertama)"):
     try:
-        # Gunakan koneksi DuckDB native secara langsung untuk sampling
-        df_preview = shared_conn.execute("SELECT * FROM jobs LIMIT 5").df()
+        # Gunakan pandas read_sql_query dengan koneksi aktif
+        df_preview = pd.read_sql_query(text("SELECT * FROM jobs LIMIT 5"), persistent_conn)
         st.dataframe(df_preview)
     except Exception as e:
         st.error(f"Gagal memuat preview data: {e}")
