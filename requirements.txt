@@ -2,6 +2,7 @@ streamlit
 duckdb
 duckdb-engine
 pyarrow
+huggingface_hub
 langchain
 langchain-community
 langchain-huggingface
