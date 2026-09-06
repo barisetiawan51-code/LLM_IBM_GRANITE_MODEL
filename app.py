@@ -27,7 +27,7 @@ if not replicate_token:
 # ======================================
 @st.cache_resource
 def init_db():
-    parquet_path = "https://huggingface.co/datasets/barisetiawan51-code/job_dataset/blob/main/job_datasett.parquet"
+    parquet_path = "https://huggingface.co/datasets/barisetiawan51-code/job_dataset/resolve/main/job_datasett.parquet"
     
     # Buat file database SQLite/DuckDB lokal sementara
     conn = duckdb.connect("jobs_data.db")
