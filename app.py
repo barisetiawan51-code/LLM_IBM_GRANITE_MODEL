@@ -1,7 +1,7 @@
 import os
 import pandas as pd
 import streamlit as st
-from sqlalchemy import create_engine, text
+from sqlalchemy import create_engine
 from huggingface_hub import hf_hub_download
 from langchain_huggingface import HuggingFaceEndpoint
 from langchain_community.utilities import SQLDatabase
@@ -29,7 +29,7 @@ if not hf_token:
 
 
 # ======================================
-# 2. Inisialisasi DuckDB & SQLAlchemy
+# 2. Inisialisasi DuckDB via SQLAlchemy (:memory:)
 # ======================================
 @st.cache_resource(show_spinner="Sedang mengunduh dataset dan menyiapkan database...")
 def get_db(token: str):
@@ -41,25 +41,16 @@ def get_db(token: str):
         token=token
     )
 
-    db_file = "/tmp/jobs_app.duckdb"
+    # 2. Buat in-memory DuckDB engine langsung via SQLAlchemy
+    # Menggunakan :memory: menghindari konflik konfigurasi file dan file lock
+    engine = create_engine("duckdb:///:memory:")
 
-    # Hapus file database sisa jika ada
-    if os.path.exists(db_file):
-        try:
-            os.remove(db_file)
-        except Exception:
-            pass
-
-    # 2. Buat engine SQLAlchemy terlebih dahulu
-    engine = create_engine(f"duckdb:///{db_file}")
-
-    # 3. Eksekusi pembuatan tabel langsung lewat SQLAlchemy connection
-    # Ini mencegah konflik konfigurasi koneksi ganda di DuckDB
-    with engine.begin() as connection:
-        connection.execute(text(f"""
+    # 3. Buat tabel jobs langsung menggunakan koneksi engine yang sama
+    with engine.connect() as conn:
+        conn.exec_driver_sql(f"""
             CREATE TABLE jobs AS 
             SELECT * FROM read_parquet('{local_parquet_path}');
-        """))
+        """)
 
     # 4. Hubungkan ke LangChain SQLDatabase
     db = SQLDatabase(
@@ -69,7 +60,7 @@ def get_db(token: str):
     )
     return db, engine
 
-# Eksekusi koneksi database
+# Jalankan inisialisasi database
 try:
     db, engine = get_db(hf_token)
 except Exception as e:
@@ -82,6 +73,7 @@ except Exception as e:
 # ======================================
 @st.cache_resource
 def get_llm(token: str):
+    # streaming=False dan task='text-generation' mencegah error 'generator raised StopIteration'
     return HuggingFaceEndpoint(
         repo_id="ibm-granite/granite-3.0-8b-instruct",
         huggingfacehub_api_token=token,
