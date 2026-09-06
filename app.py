@@ -44,7 +44,7 @@ def get_db(token: str):
 
     db_file = "/tmp/jobs_app.duckdb"
 
-    # Bersihkan database lama jika ada state rusak
+    # Bersihkan file database lama jika ada state usang/rusak
     if os.path.exists(db_file):
         try:
             os.remove(db_file)
@@ -67,7 +67,7 @@ def get_db(token: str):
     )
     return db, engine
 
-# Eksekusi pemanggilan database di luar fungsi cache agar error tertangani dengan aman
+# Eksekusi koneksi database
 try:
     db, engine = get_db(hf_token)
 except Exception as e:
@@ -80,11 +80,14 @@ except Exception as e:
 # ======================================
 @st.cache_resource
 def get_llm(token: str):
+    # streaming=False dan task="text-generation" mencegah error 'generator raised StopIteration'
     return HuggingFaceEndpoint(
         repo_id="ibm-granite/granite-3.0-8b-instruct",
         huggingfacehub_api_token=token,
-        max_new_tokens=300,
-        temperature=0.1,
+        max_new_tokens=512,
+        temperature=0.01,
+        streaming=False,
+        task="text-generation",
     )
 
 try:
@@ -102,6 +105,8 @@ agent_executor = create_sql_agent(
     db=db,
     agent_type="zero-shot-react-description",
     verbose=True,
+    handle_parsing_errors=True,  # Menangani parsing error jika format ReAct model terpotong
+    max_iterations=5,            # Batasi iterasi agar tidak looping tanpa batas
     allow_dangerous_code=True
 )
 
