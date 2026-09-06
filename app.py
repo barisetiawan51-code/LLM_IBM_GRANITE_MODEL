@@ -18,15 +18,18 @@ st.set_page_config(
 # ======================================
 # 1. Ambil API Token Hugging Face
 # ======================================
-if "HUGGINGFACEHUB_API_TOKEN" in st.secrets:
-    hf_token = st.secrets["HUGGINGFACEHUB_API_TOKEN"]
-    os.environ["HUGGINGFACEHUB_API_TOKEN"] = hf_token
-else:
-    hf_token = os.getenv("HUGGINGFACEHUB_API_TOKEN")
+hf_token = st.secrets.get("HUGGINGFACEHUB_API_TOKEN") or os.getenv("HUGGINGFACEHUB_API_TOKEN")
 
 if not hf_token:
-    st.error("❌ HUGGINGFACEHUB_API_TOKEN tidak ditemukan. Harap tambahkan di Streamlit Secrets atau environment variable!")
+    st.title("💼 Job Insights - IBM Granite")
+    st.error("❌ Token `HUGGINGFACEHUB_API_TOKEN` belum disetel.")
+    st.info(
+        "Buka **Settings > Secrets** di Streamlit Cloud dan tambahkan:\n\n"
+        '```toml\nHUGGINGFACEHUB_API_TOKEN = "hf_xxxxxxxxxxxxxxxxxxxx"\n```'
+    )
     st.stop()
+
+os.environ["HUGGINGFACEHUB_API_TOKEN"] = hf_token
 
 
 # ======================================
@@ -34,39 +37,45 @@ if not hf_token:
 # ======================================
 @st.cache_resource(show_spinner="Sedang mengunduh dataset dan menyiapkan database...")
 def get_db(token: str):
-    # 1. Unduh file Parquet dari Hugging Face Hub
-    local_parquet_path = hf_hub_download(
-        repo_id="barisetiawan51-code/job_dataset",
-        filename="job_dataset.parquet",
-        repo_type="dataset",
-        token=token
-    )
+    try:
+        # 1. Unduh file Parquet ke direktori lokal sementara
+        local_parquet_path = hf_hub_download(
+            repo_id="barisetiawan51-code/job_dataset",
+            filename="job_dataset.parquet",
+            repo_type="dataset",
+            token=token,
+            local_dir="/tmp/hf_dataset"
+        )
+        df = pd.read_parquet(local_parquet_path)
+    except Exception as e_hf:
+        # Fallback langsung via URL raw jika hf_hub_download mengalami kendala
+        try:
+            url = "https://huggingface.co/datasets/barisetiawan51-code/job_dataset/resolve/main/job_dataset.parquet"
+            df = pd.read_parquet(url, storage_options={"Authorization": f"Bearer {token}"})
+        except Exception as e_fallback:
+            raise RuntimeError(f"Gagal mengunduh Parquet via Hub ({e_hf}) dan URL ({e_fallback})")
 
-    # 2. Baca file Parquet ke DataFrame
-    df = pd.read_parquet(local_parquet_path)
-
-    # 3. Gunakan SQLite in-memory dengan StaticPool agar tabel tidak hilang antar-koneksi
+    # 2. Inisialisasi SQLite in-memory dengan StaticPool agar koneksi persisten
     engine = create_engine(
         "sqlite:///:memory:",
         connect_args={"check_same_thread": False},
         poolclass=StaticPool
     )
 
-    # 4. Tulis langsung ke tabel 'jobs'
+    # 3. Masukkan data ke tabel 'jobs'
     df.to_sql("jobs", con=engine, index=False, if_exists="replace")
 
-    # 5. Hubungkan ke LangChain SQLDatabase
+    # 4. Hubungkan ke LangChain SQLDatabase
     db = SQLDatabase(
         engine=engine,
         include_tables=["jobs"]
     )
     return db, engine
 
-# Eksekusi koneksi database
 try:
     db, engine = get_db(hf_token)
 except Exception as e:
-    st.error(f"❌ Gagal memuat database dari Hugging Face: {e}")
+    st.error(f"❌ Gagal memuat database: {e}")
     st.stop()
 
 
@@ -110,11 +119,11 @@ agent_executor = create_sql_agent(
 # ======================================
 st.title("💼 Job Insights dengan IBM Granite")
 st.write(
-    "Tanyakan pertanyaan seputar lowongan kerja, contoh: "
-    "*berapa banyak postingan job di bidang digital marketing pada tahun 2022?*"
+    "Tanyakan pertanyaan seputar data lowongan kerja, contoh: "
+    "*Berapa jumlah pekerjaan untuk posisi Data Analyst?*"
 )
 
-query = st.text_input("Pertanyaan:")
+query = st.text_input("Masukkan pertanyaan Anda:")
 
 if st.button("Tanyakan", type="primary"):
     if not query.strip():
@@ -124,16 +133,16 @@ if st.button("Tanyakan", type="primary"):
             try:
                 result = agent_executor.invoke({"input": query})
                 response_text = result.get("output", result) if isinstance(result, dict) else result
-                st.success("Jawaban IBM Granite Agent:")
+                st.success("Jawaban:")
                 st.write(response_text)
             except Exception as e:
                 st.error(f"Terjadi error saat mengeksekusi pertanyaan: {e}")
 
 
 # ======================================
-# 6. Tampilkan Pratinjau Data (Sampling)
+# 6. Pratinjau Data (Sampling)
 # ======================================
-with st.expander("📊 Lihat data awal (5 Baris Pertama)"):
+with st.expander("📊 Lihat 5 Baris Pertama Data"):
     try:
         df_preview = pd.read_sql_query("SELECT * FROM jobs LIMIT 5", engine)
         st.dataframe(df_preview, use_container_width=True)
