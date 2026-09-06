@@ -1,5 +1,4 @@
 import os
-import sqlite3
 import duckdb
 import pandas as pd
 import streamlit as st
@@ -30,12 +29,12 @@ if not hf_token:
 
 
 # ======================================
-# 2. Inisialisasi Database SQLite In-Memory Shared Cache
+# 2. Inisialisasi DuckDB In-Memory (Sangat Hemat RAM)
 # ======================================
 @st.cache_resource
 def get_db():
     try:
-        # Unduh file Parquet dari Hugging Face
+        # Unduh file Parquet dari HF
         local_parquet_path = hf_hub_download(
             repo_id="barisetiawan51-code/job_dataset",
             filename="job_dataset.parquet",
@@ -43,22 +42,19 @@ def get_db():
             token=hf_token
         )
         
-        # Baca file Parquet via DuckDB langsung ke pandas DataFrame
-        df = duckdb.query(f"SELECT * FROM read_parquet('{local_parquet_path}')").df()
+        # Buat koneksi in-memory DuckDB dan daftarkan VIEW (tidak memakan RAM)
+        conn = duckdb.connect(database=":memory:")
+        conn.execute(f"CREATE VIEW jobs AS SELECT * FROM read_parquet('{local_parquet_path}')")
         
-        # Muat DataFrame ke dalam SQLite In-Memory dengan Shared Cache (Multi-Thread Safe)
-        sqlite_conn = sqlite3.connect("file:jobdb?mode=memory&cache=shared", uri=True)
-        df.to_sql("jobs", sqlite_conn, if_exists="replace", index=False)
-        
-        # Hubungkan LangChain SQLDatabase ke SQLite
-        db = SQLDatabase.from_uri("sqlite:///file:jobdb?mode=memory&cache=shared", include_tables=["jobs"])
-        return db, sqlite_conn
+        # Hubungkan ke LangChain SQLDatabase
+        db = SQLDatabase(engine=conn, include_tables=["jobs"])
+        return db, conn
         
     except Exception as e:
         st.error(f"Gagal mengunduh/memuat Parquet dari Hugging Face: {e}")
         st.stop()
 
-db, sqlite_conn = get_db()
+db, duckdb_conn = get_db()
 
 
 # ======================================
@@ -112,7 +108,7 @@ if st.button("Tanyakan", type="primary"):
 # ======================================
 with st.expander("📊 Lihat data awal (5 Baris Pertama)"):
     try:
-        df_preview = pd.read_sql_query("SELECT * FROM jobs LIMIT 5", sqlite_conn)
+        df_preview = duckdb_conn.execute("SELECT * FROM jobs LIMIT 5").df()
         st.dataframe(df_preview)
     except Exception as e:
         st.error(f"Gagal memuat preview data: {e}")
