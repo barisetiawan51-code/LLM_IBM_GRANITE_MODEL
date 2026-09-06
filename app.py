@@ -12,7 +12,7 @@ from langchain_community.agent_toolkits import create_sql_agent
 # Konfigurasi Halaman Streamlit
 # ======================================
 st.set_page_config(
-    page_title="Job Insights - IBM Granite",
+    page_title="Job Insights - SQL AI Agent",
     page_icon="💼",
     layout="wide"
 )
@@ -23,7 +23,7 @@ st.set_page_config(
 hf_token = st.secrets.get("HUGGINGFACEHUB_API_TOKEN") or os.getenv("HUGGINGFACEHUB_API_TOKEN")
 
 if not hf_token:
-    st.title("💼 Job Insights - IBM Granite")
+    st.title("💼 Job Insights - SQL AI Agent")
     st.error("❌ Token `HUGGINGFACEHUB_API_TOKEN` belum ditemukan.")
     st.info(
         "Silakan buka **Settings > Secrets** di Streamlit Cloud, lalu tambahkan:\n\n"
@@ -41,7 +41,7 @@ CACHE_DIR = "/tmp/dataset"
 # ======================================
 @st.cache_resource(show_spinner="Sedang menyiapkan database lowongan kerja...")
 def get_db(token: str):
-    # 1. Unduh file Parquet dari Hugging Face Hub jika belum ada
+    # 1. Unduh file Parquet dari Hugging Face Hub
     try:
         local_parquet = hf_hub_download(
             repo_id="barisetiawan51-code/job_dataset",
@@ -53,7 +53,7 @@ def get_db(token: str):
     except Exception:
         local_parquet = "https://huggingface.co/datasets/barisetiawan51-code/job_dataset/resolve/main/job_dataset.parquet"
 
-    # 2. Buat database DuckDB fisik di disk /tmp jika belum ada
+    # 2. Buat database DuckDB fisik jika belum ada
     if not os.path.exists(DB_PATH):
         raw_conn = duckdb.connect(DB_PATH)
         raw_conn.execute(f"""
@@ -82,17 +82,16 @@ except Exception as e:
 
 
 # ======================================
-# 3. Inisialisasi Model LLM (IBM Granite via Router HF)
+# 3. Inisialisasi Model LLM (Serverless Supported Model)
 # ======================================
 @st.cache_resource
 def get_llm(token: str):
-    # Gunakan direct router URL untuk menghindari kendala DNS api-inference lama
-    endpoint_url = "https://router.huggingface.co/hf-inference/models/ibm-granite/granite-3.0-8b-instruct"
-    
+    # Qwen2.5-Coder-7B-Instruct didukung penuh di Serverless Hugging Face
+    # dan memiliki kapabilitas penulisan query SQL yang sangat akurat
     return HuggingFaceEndpoint(
-        endpoint_url=endpoint_url,
+        repo_id="Qwen/Qwen2.5-Coder-7B-Instruct",
         huggingfacehub_api_token=token,
-        max_new_tokens=350,
+        max_new_tokens=400,
         temperature=0.01,
         streaming=False,
         timeout=120,
@@ -101,7 +100,7 @@ def get_llm(token: str):
 try:
     llm = get_llm(hf_token)
 except Exception as e:
-    st.error(f"❌ Gagal menginisialisasi model IBM Granite: {e}")
+    st.error(f"❌ Gagal menginisialisasi model LLM: {e}")
     st.stop()
 
 
@@ -122,10 +121,10 @@ agent_executor = create_sql_agent(
 # ======================================
 # 5. Antarmuka (User Interface) Streamlit
 # ======================================
-st.title("💼 Job Insights dengan IBM Granite")
+st.title("💼 Job Insights dengan SQL AI Agent")
 st.write(
     "Tanyakan insight data lowongan pekerjaan, contoh: "
-    "*Berapa jumlah pekerjaan untuk posisi Data Analyst?*"
+    "*Berapa jumlah lowongan pekerjaan untuk posisi Data Analyst?*"
 )
 
 query = st.text_input("Pertanyaan Anda:")
@@ -134,7 +133,7 @@ if st.button("Tanyakan", type="primary"):
     if not query.strip():
         st.warning("Silakan masukkan pertanyaan terlebih dahulu.")
     else:
-        with st.spinner("IBM Granite sedang menganalisis database..."):
+        with st.spinner("AI sedang menganalisis database..."):
             try:
                 result = agent_executor.invoke({"input": query})
                 response_text = result.get("output", result) if isinstance(result, dict) else result
