@@ -10,7 +10,7 @@ from langchain_community.agent_toolkits import create_sql_agent
 
 # Config halaman Streamlit
 st.set_page_config(
-    page_title="Job Insights - IBM Granite", 
+    page_title="Job Insights - IBM Granite",
     page_icon="💼",
     layout="wide"
 )
@@ -25,66 +25,73 @@ else:
     hf_token = os.getenv("HUGGINGFACEHUB_API_TOKEN")
 
 if not hf_token:
-    st.error("❌ HUGGINGFACEHUB_API_TOKEN tidak ditemukan. Harap set di Streamlit Secrets!")
+    st.error("❌ HUGGINGFACEHUB_API_TOKEN tidak ditemukan. Harap tambahkan di Streamlit Secrets atau environment variable!")
     st.stop()
 
 
 # ======================================
-# 2. Inisialisasi DuckDB via SQLAlchemy Engine
+# 2. Inisialisasi DuckDB & SQLAlchemy
 # ======================================
-@st.cache_resource
-def get_db():
-    try:
-        # 1. Unduh file Parquet dari Hugging Face
-        local_parquet_path = hf_hub_download(
-            repo_id="barisetiawan51-code/job_dataset",
-            filename="job_dataset.parquet",
-            repo_type="dataset",
-            token=hf_token
-        )
-        
-        db_file = "/tmp/jobs_app.duckdb"
-        
-        # Bersihkan file database lama jika ada sisa corrupt/stale schema
-        if os.path.exists(db_file):
-            try:
-                os.remove(db_file)
-            except Exception:
-                pass
-        
-        # 2. Buat tabel fisik permanen (bukan sekadar VIEW)
-        conn = duckdb.connect(db_file)
-        conn.execute(f"""
-            CREATE TABLE jobs AS 
-            SELECT * FROM read_parquet('{local_parquet_path}');
-        """)
-        conn.close()
-        
-        # 3. Hubungkan via SQLAlchemy Engine
-        engine = create_engine(f"duckdb:///{db_file}")
-        
-        # 4. Inisialisasi SQLDatabase dengan view_support aktif (opsional tapi aman)
-        db = SQLDatabase(
-            engine=engine, 
-            include_tables=["jobs"],
-            view_support=True
-        )
-        
-        return db, engine
-        
-    except Exception as e:
-        st.error(f"Gagal mengunduh/memuat Parquet dari Hugging Face: {e}")
-        st.stop()
+@st.cache_resource(show_spinner="Sedang mengunduh dataset dan menyiapkan database...")
+def get_db(token: str):
+    # 1. Unduh file Parquet dari Hugging Face Hub
+    local_parquet_path = hf_hub_download(
+        repo_id="barisetiawan51-code/job_dataset",
+        filename="job_dataset.parquet",
+        repo_type="dataset",
+        token=token
+    )
+
+    db_file = "/tmp/jobs_app.duckdb"
+
+    # Bersihkan database lama jika ada state rusak
+    if os.path.exists(db_file):
+        try:
+            os.remove(db_file)
+        except Exception:
+            pass
+
+    # 2. Buat tabel fisik permanen agar terdeteksi sempurna oleh SQLAlchemy inspector
+    conn = duckdb.connect(db_file)
+    conn.execute(f"CREATE TABLE jobs AS SELECT * FROM read_parquet('{local_parquet_path}');")
+    conn.close()
+
+    # 3. Buat SQLAlchemy Engine
+    engine = create_engine(f"duckdb:///{db_file}")
+
+    # 4. Hubungkan ke LangChain SQLDatabase
+    db = SQLDatabase(
+        engine=engine,
+        include_tables=["jobs"],
+        view_support=True
+    )
+    return db, engine
+
+# Eksekusi pemanggilan database di luar fungsi cache agar error tertangani dengan aman
+try:
+    db, engine = get_db(hf_token)
+except Exception as e:
+    st.error(f"❌ Gagal memuat database dari Hugging Face: {e}")
+    st.stop()
+
 
 # ======================================
 # 3. Inisialisasi IBM Granite via Hugging Face API
 # ======================================
-llm = HuggingFaceEndpoint(
-    repo_id="ibm-granite/granite-3.0-8b-instruct",
-    huggingfacehub_api_token=hf_token,
-    max_new_tokens=300,
-    temperature=0.1,
-)
+@st.cache_resource
+def get_llm(token: str):
+    return HuggingFaceEndpoint(
+        repo_id="ibm-granite/granite-3.0-8b-instruct",
+        huggingfacehub_api_token=token,
+        max_new_tokens=300,
+        temperature=0.1,
+    )
+
+try:
+    llm = get_llm(hf_token)
+except Exception as e:
+    st.error(f"❌ Gagal menginisialisasi model LLM: {e}")
+    st.stop()
 
 
 # ======================================
@@ -103,8 +110,10 @@ agent_executor = create_sql_agent(
 # 5. Streamlit UI
 # ======================================
 st.title("💼 Job Insights dengan IBM Granite")
-st.write("Tanyakan pertanyaan seputar lowongan kerja, contoh: "
-         "*berapa banyak postingan job di bidang digital marketing pada tahun 2022?*")
+st.write(
+    "Tanyakan pertanyaan seputar lowongan kerja, contoh: "
+    "*berapa banyak postingan job di bidang digital marketing pada tahun 2022?*"
+)
 
 query = st.text_input("Pertanyaan:")
 
@@ -128,6 +137,6 @@ if st.button("Tanyakan", type="primary"):
 with st.expander("📊 Lihat data awal (5 Baris Pertama)"):
     try:
         df_preview = pd.read_sql_query("SELECT * FROM jobs LIMIT 5", engine)
-        st.dataframe(df_preview)
+        st.dataframe(df_preview, use_container_width=True)
     except Exception as e:
         st.error(f"Gagal memuat preview data: {e}")
