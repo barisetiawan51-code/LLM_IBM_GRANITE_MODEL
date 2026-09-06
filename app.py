@@ -4,7 +4,7 @@ import pandas as pd
 import streamlit as st
 from sqlalchemy import create_engine
 from huggingface_hub import hf_hub_download
-from langchain_huggingface import HuggingFaceEndpoint
+from langchain_ibm import WatsonxLLM
 from langchain_community.utilities import SQLDatabase
 from langchain_community.agent_toolkits import create_sql_agent
 
@@ -12,48 +12,51 @@ from langchain_community.agent_toolkits import create_sql_agent
 # Konfigurasi Halaman Streamlit
 # ======================================
 st.set_page_config(
-    page_title="Job Insights - SQL AI Agent",
+    page_title="Job Insights - IBM Granite",
     page_icon="💼",
     layout="wide"
 )
 
 # ======================================
-# 1. Validasi Token Hugging Face
+# 1. Validasi Kredensial IBM watsonx
 # ======================================
-hf_token = st.secrets.get("HUGGINGFACEHUB_API_TOKEN") or os.getenv("HUGGINGFACEHUB_API_TOKEN")
+watsonx_apikey = st.secrets.get("WATSONX_APIKEY") or os.getenv("WATSONX_APIKEY")
+watsonx_project_id = st.secrets.get("WATSONX_PROJECT_ID") or os.getenv("WATSONX_PROJECT_ID")
+watsonx_url = st.secrets.get("WATSONX_URL") or os.getenv("WATSONX_URL", "https://us-south.ml.cloud.ibm.com")
 
-if not hf_token:
-    st.title("💼 Job Insights - SQL AI Agent")
-    st.error("❌ Token `HUGGINGFACEHUB_API_TOKEN` belum ditemukan.")
+if not watsonx_apikey or not watsonx_project_id:
+    st.title("💼 Job Insights - IBM Granite")
+    st.error("❌ Kredensial IBM watsonx.ai belum lengkap di Secrets.")
     st.info(
         "Silakan buka **Settings > Secrets** di Streamlit Cloud, lalu tambahkan:\n\n"
-        '```toml\nHUGGINGFACEHUB_API_TOKEN = "hf_xxxxxxxxxxxxxxxxxxxx"\n```'
+        '```toml\n'
+        'WATSONX_APIKEY = "API_KEY_IBM_ANDA"\n'
+        'WATSONX_PROJECT_ID = "PROJECT_ID_ANDA"\n'
+        'WATSONX_URL = "[https://us-south.ml.cloud.ibm.com](https://us-south.ml.cloud.ibm.com)"\n'
+        '```'
     )
     st.stop()
-
-os.environ["HUGGINGFACEHUB_API_TOKEN"] = hf_token
 
 DB_PATH = "/tmp/jobs.duckdb"
 CACHE_DIR = "/tmp/dataset"
 
 # ======================================
-# 2. Inisialisasi Database DuckDB (Hemat RAM & Persisten)
+# 2. Inisialisasi Database DuckDB (Hemat RAM)
 # ======================================
 @st.cache_resource(show_spinner="Sedang menyiapkan database lowongan kerja...")
-def get_db(token: str):
-    # 1. Unduh file Parquet dari Hugging Face Hub
+def get_db():
+    # 1. Unduh dataset Parquet
     try:
         local_parquet = hf_hub_download(
             repo_id="barisetiawan51-code/job_dataset",
             filename="job_dataset.parquet",
             repo_type="dataset",
-            token=token,
             local_dir=CACHE_DIR
         )
     except Exception:
         local_parquet = "https://huggingface.co/datasets/barisetiawan51-code/job_dataset/resolve/main/job_dataset.parquet"
 
-    # 2. Buat database DuckDB fisik jika belum ada
+    # 2. Buat database DuckDB fisik di disk
     if not os.path.exists(DB_PATH):
         raw_conn = duckdb.connect(DB_PATH)
         raw_conn.execute(f"""
@@ -62,7 +65,7 @@ def get_db(token: str):
         """)
         raw_conn.close()
 
-    # 3. Hubungkan SQLAlchemy Engine ke database DuckDB fisik
+    # 3. Hubungkan SQLAlchemy Engine
     engine = create_engine(f"duckdb:///{DB_PATH}")
 
     # 4. Hubungkan ke LangChain SQLDatabase
@@ -75,32 +78,35 @@ def get_db(token: str):
     return db, engine
 
 try:
-    db, engine = get_db(hf_token)
+    db, engine = get_db()
 except Exception as e:
     st.error(f"❌ Gagal memuat database: {e}")
     st.stop()
 
 
 # ======================================
-# 3. Inisialisasi Model LLM (Serverless Supported Model)
+# 3. Inisialisasi Model IBM Granite Resmi (Gratis)
 # ======================================
 @st.cache_resource
-def get_llm(token: str):
-    # Qwen2.5-Coder-7B-Instruct didukung penuh di Serverless Hugging Face
-    # dan memiliki kapabilitas penulisan query SQL yang sangat akurat
-    return HuggingFaceEndpoint(
-        repo_id="Qwen/Qwen2.5-Coder-7B-Instruct",
-        huggingfacehub_api_token=token,
-        max_new_tokens=400,
-        temperature=0.01,
-        streaming=False,
-        timeout=120,
+def get_llm(apikey: str, project_id: str, url: str):
+    parameters = {
+        "decoding_method": "greedy",
+        "max_new_tokens": 400,
+        "temperature": 0.0,
+    }
+    
+    return WatsonxLLM(
+        model_id="ibm/granite-3-8b-instruct",
+        url=url,
+        apikey=apikey,
+        project_id=project_id,
+        params=parameters
     )
 
 try:
-    llm = get_llm(hf_token)
+    llm = get_llm(watsonx_apikey, watsonx_project_id, watsonx_url)
 except Exception as e:
-    st.error(f"❌ Gagal menginisialisasi model LLM: {e}")
+    st.error(f"❌ Gagal menginisialisasi model IBM Granite: {e}")
     st.stop()
 
 
@@ -121,7 +127,7 @@ agent_executor = create_sql_agent(
 # ======================================
 # 5. Antarmuka (User Interface) Streamlit
 # ======================================
-st.title("💼 Job Insights dengan SQL AI Agent")
+st.title("💼 Job Insights dengan IBM Granite")
 st.write(
     "Tanyakan insight data lowongan pekerjaan, contoh: "
     "*Berapa jumlah lowongan pekerjaan untuk posisi Data Analyst?*"
@@ -133,7 +139,7 @@ if st.button("Tanyakan", type="primary"):
     if not query.strip():
         st.warning("Silakan masukkan pertanyaan terlebih dahulu.")
     else:
-        with st.spinner("AI sedang menganalisis database..."):
+        with st.spinner("IBM Granite sedang menganalisis database..."):
             try:
                 result = agent_executor.invoke({"input": query})
                 response_text = result.get("output", result) if isinstance(result, dict) else result
@@ -144,7 +150,7 @@ if st.button("Tanyakan", type="primary"):
 
 
 # ======================================
-# 6. Preview Sampel Data (5 Baris Pertama)
+# 6. Preview Data (5 Baris Pertama)
 # ======================================
 with st.expander("📊 Pratinjau 5 Baris Pertama Data"):
     try:
