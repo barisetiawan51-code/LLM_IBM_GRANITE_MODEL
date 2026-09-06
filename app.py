@@ -1,8 +1,7 @@
 import os
-import duckdb
 import pandas as pd
 import streamlit as st
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, text
 from huggingface_hub import hf_hub_download
 from langchain_huggingface import HuggingFaceEndpoint
 from langchain_community.utilities import SQLDatabase
@@ -44,20 +43,23 @@ def get_db(token: str):
 
     db_file = "/tmp/jobs_app.duckdb"
 
-    # Bersihkan file database lama jika ada state usang/rusak
+    # Hapus file database sisa jika ada
     if os.path.exists(db_file):
         try:
             os.remove(db_file)
         except Exception:
             pass
 
-    # 2. Buat tabel fisik permanen agar terdeteksi sempurna oleh SQLAlchemy inspector
-    conn = duckdb.connect(db_file)
-    conn.execute(f"CREATE TABLE jobs AS SELECT * FROM read_parquet('{local_parquet_path}');")
-    conn.close()
-
-    # 3. Buat SQLAlchemy Engine
+    # 2. Buat engine SQLAlchemy terlebih dahulu
     engine = create_engine(f"duckdb:///{db_file}")
+
+    # 3. Eksekusi pembuatan tabel langsung lewat SQLAlchemy connection
+    # Ini mencegah konflik konfigurasi koneksi ganda di DuckDB
+    with engine.begin() as connection:
+        connection.execute(text(f"""
+            CREATE TABLE jobs AS 
+            SELECT * FROM read_parquet('{local_parquet_path}');
+        """))
 
     # 4. Hubungkan ke LangChain SQLDatabase
     db = SQLDatabase(
@@ -80,7 +82,6 @@ except Exception as e:
 # ======================================
 @st.cache_resource
 def get_llm(token: str):
-    # streaming=False dan task="text-generation" mencegah error 'generator raised StopIteration'
     return HuggingFaceEndpoint(
         repo_id="ibm-granite/granite-3.0-8b-instruct",
         huggingfacehub_api_token=token,
@@ -105,8 +106,8 @@ agent_executor = create_sql_agent(
     db=db,
     agent_type="zero-shot-react-description",
     verbose=True,
-    handle_parsing_errors=True,  # Menangani parsing error jika format ReAct model terpotong
-    max_iterations=5,            # Batasi iterasi agar tidak looping tanpa batas
+    handle_parsing_errors=True,
+    max_iterations=5,
     allow_dangerous_code=True
 )
 
