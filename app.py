@@ -1,8 +1,8 @@
 import os
+import sqlite3
 import duckdb
 import pandas as pd
 import streamlit as st
-from sqlalchemy import create_engine
 from huggingface_hub import hf_hub_download
 from langchain_huggingface import HuggingFaceEndpoint
 from langchain_community.utilities import SQLDatabase
@@ -30,7 +30,7 @@ if not hf_token:
 
 
 # ======================================
-# 2. Inisialisasi DuckDB File-Based
+# 2. Inisialisasi Database SQLite In-Memory Shared Cache
 # ======================================
 @st.cache_resource
 def get_db():
@@ -43,29 +43,22 @@ def get_db():
             token=hf_token
         )
         
-        db_file = "/tmp/jobs_persistent.duckdb"
+        # Baca file Parquet via DuckDB langsung ke pandas DataFrame
+        df = duckdb.query(f"SELECT * FROM read_parquet('{local_parquet_path}')").df()
         
-        # Buat database file dan daftarkan view 'jobs'
-        conn = duckdb.connect(db_file)
-        conn.execute("SET unsafe_disable_etag_checks = true;")
-        conn.execute(f"CREATE VIEW IF NOT EXISTS jobs AS SELECT * FROM read_parquet('{local_parquet_path}');")
-        conn.close()
+        # Muat DataFrame ke dalam SQLite In-Memory dengan Shared Cache (Multi-Thread Safe)
+        sqlite_conn = sqlite3.connect("file:jobdb?mode=memory&cache=shared", uri=True)
+        df.to_sql("jobs", sqlite_conn, if_exists="replace", index=False)
         
-        # Inisialisasi Engine SQLAlchemy
-        engine = create_engine(
-            f"duckdb:///{db_file}",
-            connect_args={"read_only": True}
-        )
-        
-        # Deklarasikan include_tables agar LangChain tidak bingung membaca skema
-        db = SQLDatabase(engine, include_tables=["jobs"])
-        return db, db_file
+        # Hubungkan LangChain SQLDatabase ke SQLite
+        db = SQLDatabase.from_uri("sqlite:///file:jobdb?mode=memory&cache=shared", include_tables=["jobs"])
+        return db, sqlite_conn
         
     except Exception as e:
         st.error(f"Gagal mengunduh/memuat Parquet dari Hugging Face: {e}")
         st.stop()
 
-db, db_file = get_db()
+db, sqlite_conn = get_db()
 
 
 # ======================================
@@ -119,7 +112,7 @@ if st.button("Tanyakan", type="primary"):
 # ======================================
 with st.expander("📊 Lihat data awal (5 Baris Pertama)"):
     try:
-        df_preview = pd.read_sql_query("SELECT * FROM jobs LIMIT 5", db._engine)
+        df_preview = pd.read_sql_query("SELECT * FROM jobs LIMIT 5", sqlite_conn)
         st.dataframe(df_preview)
     except Exception as e:
         st.error(f"Gagal memuat preview data: {e}")
