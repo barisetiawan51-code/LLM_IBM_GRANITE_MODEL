@@ -1,6 +1,7 @@
 import os
 import streamlit as st
 import pandas as pd
+import pyarrow.dataset as ds
 from langchain_community.llms import Replicate
 from langchain_experimental.agents import create_pandas_dataframe_agent
 
@@ -31,24 +32,34 @@ if not replicate_token:
     st.stop()
 
 # ======================================
-# 2. Load Dataset Parquet dari Hugging Face
+# 2. Load Dataset Parquet (Streaming / Hemat RAM)
 # ======================================
-# URL file Parquet langsung dari Hugging Face
 PARQUET_URL = "https://huggingface.co/datasets/barisetiawan51-code/job_dataset/resolve/main/job_dataset.parquet"
-SAMPLE_ROWS = 30000  # Membatasi jumlah baris agar tidak crash OOM di RAM 1 GB
+SAMPLE_ROWS = 20000  # Membatasi 20.000 baris agar aman dari limit 1 GB RAM
 
 @st.cache_data(show_spinner=False)
 def load_data(url, limit):
-    # Membaca file parquet langsung ke DataFrame
-    df_full = pd.read_parquet(url)
-    # Ambil sampel subset data untuk menghemat RAM dan mempercepat analisis LLM
-    return df_full.head(limit)
+    # Membuka skema dataset tanpa memuat seluruh 726 MB ke RAM
+    dataset = ds.dataset(url, format="parquet")
+    
+    # Ambil batch data pertama saja sampai batas limit
+    records = []
+    total_count = 0
+    for batch in dataset.to_batches():
+        batch_df = batch.to_pandas()
+        records.append(batch_df)
+        total_count += len(batch_df)
+        if total_count >= limit:
+            break
+            
+    df_sample = pd.concat(records, ignore_index=True)
+    return df_sample.head(limit)
 
-with st.spinner("Memuat dataset dari Hugging Face ke memori..."):
+with st.spinner("Mengambil sebagian data lowongan kerja dari Hugging Face..."):
     try:
         df = load_data(PARQUET_URL, SAMPLE_ROWS)
     except Exception as e:
-        st.error(f"❌ Gagal memuat file Parquet: {e}")
+        st.error(f"❌ Gagal memuat data: {e}")
         st.stop()
 
 # ======================================
@@ -81,7 +92,7 @@ agent = create_pandas_dataframe_agent(
 # 5. Antarmuka Pengguna (UI)
 # ======================================
 st.title("💼 Job Insights dengan Granite + Pandas Agent")
-st.caption(f"Dataset aktif: {len(df):,} baris data lowongan kerja.")
+st.caption(f"Dataset aktif: {len(df):,} baris sampel lowongan kerja.")
 
 query = st.text_input(
     "Tanyakan sesuatu tentang data:",
@@ -102,7 +113,7 @@ if st.button("Analisis Data", type="primary"):
                 else:
                     st.write(response)
             except Exception as e:
-                st.error(f"Terjadi kendala: {e}")
+                st.error(f"Terjadi kendala saat analisis: {e}")
 
 # ======================================
 # 6. Preview Data
