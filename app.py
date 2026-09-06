@@ -30,23 +30,23 @@ if not hf_token:
 
 
 # ======================================
-# 2. Inisialisasi DuckDB Native dengan Wrapper DBAPI SQLAlchemy
+# 2. Wrapper DBAPI Kompatibel SQLAlchemy 2.0
 # ======================================
-class DuckDBConnectionWrapper:
-    """Wrapper untuk menyesuaikan koneksi DuckDB dengan ekspektasi DBAPI SQLAlchemy 2.0"""
-    def __init__(self, conn):
-        self._conn = conn
+class DuckDBSQLAlchemyWrapper:
+    """Wrapper untuk menyediakan atribut .connection & .driver_connection untuk SQLAlchemy 2.0+"""
+    def __init__(self, raw_conn):
+        self._raw_conn = raw_conn
 
     @property
     def connection(self):
-        return self._conn
+        return self._raw_conn
 
     @property
     def driver_connection(self):
-        return self._conn
+        return self._raw_conn
 
-    def __getattr__(self, attr):
-        return getattr(self._conn, attr)
+    def __getattr__(self, name):
+        return getattr(self._raw_conn, name)
 
 
 @st.cache_resource
@@ -60,26 +60,26 @@ def get_db():
             token=hf_token
         )
         
-        # 1. Buat koneksi native DuckDB di memori
-        raw_conn = duckdb.connect(":memory:")
-        raw_conn.execute("SET unsafe_disable_etag_checks = true;")
-        raw_conn.execute(f"CREATE VIEW jobs AS SELECT * FROM read_parquet('{local_parquet_path}');")
+        # 1. Inisialisasi koneksi native DuckDB tunggal
+        native_conn = duckdb.connect(":memory:")
+        native_conn.execute("SET unsafe_disable_etag_checks = true;")
+        native_conn.execute(f"CREATE VIEW jobs AS SELECT * FROM read_parquet('{local_parquet_path}');")
         
-        # 2. Bungkus koneksi agar memiliki properti .connection dan .driver_connection
-        wrapped_conn = DuckDBConnectionWrapper(raw_conn)
+        # 2. Bungkus dengan wrapper kompatibel SQLAlchemy 2.0
+        wrapped_conn = DuckDBSQLAlchemyWrapper(native_conn)
         
-        # 3. Buat SQLAlchemy Engine menggunakan koneksi persisten yang dibungkus
+        # 3. Buat SQLAlchemy Engine yang SELALU menggunakan koneksi memori ini
         engine = create_engine("duckdb:///:memory:", creator=lambda: wrapped_conn)
         
         # 4. Inisialisasi SQLDatabase dari LangChain
         db = SQLDatabase(engine)
-        return db, raw_conn
+        return db, native_conn
         
     except Exception as e:
         st.error(f"Gagal mengunduh/memuat Parquet: {e}")
         st.stop()
 
-db, raw_conn = get_db()
+db, native_conn = get_db()
 
 
 # ======================================
@@ -133,8 +133,8 @@ if st.button("Tanyakan", type="primary"):
 # ======================================
 with st.expander("📊 Lihat data awal (5 Baris Pertama)"):
     try:
-        # Menggunakan koneksi native DuckDB secara langsung
-        df_preview = raw_conn.execute("SELECT * FROM jobs LIMIT 5").df()
+        # Eksekusi preview langsung melalui native connection DuckDB
+        df_preview = native_conn.execute("SELECT * FROM jobs LIMIT 5").df()
         st.dataframe(df_preview)
     except Exception as e:
         st.error(f"Gagal memuat preview data: {e}")
