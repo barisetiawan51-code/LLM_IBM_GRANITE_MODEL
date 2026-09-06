@@ -1,6 +1,7 @@
 import os
 import pandas as pd
 import streamlit as st
+import duckdb
 from sqlalchemy import create_engine, text
 from huggingface_hub import hf_hub_download
 from langchain_huggingface import HuggingFaceEndpoint
@@ -29,7 +30,7 @@ if not hf_token:
 
 
 # ======================================
-# 2. Inisialisasi DuckDB dengan Mode AUTOCOMMIT (Tanpa Transaksi Bentrok)
+# 2. Inisialisasi DuckDB via Native Shared Memory Session
 # ======================================
 @st.cache_resource
 def get_db():
@@ -42,27 +43,34 @@ def get_db():
             token=hf_token
         )
         
-        # Buat engine SQLAlchemy untuk DuckDB in-memory
-        engine = create_engine("duckdb:///:memory:")
+        # 1. Buat koneksi native DuckDB
+        native_conn = duckdb.connect(":memory:")
+        native_conn.execute("SET unsafe_disable_etag_checks = true;")
+        native_conn.execute(f"CREATE VIEW jobs AS SELECT * FROM read_parquet('{local_parquet_path}');")
         
-        # Eksekusi DDL di level driver DBAPI langsung untuk menghindari blok transaksi SQLAlchemy
-        raw_conn = engine.raw_connection()
-        driver_conn = getattr(raw_conn, 'driver_connection', raw_conn.connection)
+        # 2. Buat pembungkus DBAPI custom agar SQLAlchemy 2.0 menerima native_conn tanpa error atribut
+        class DBAPIProxy:
+            def __init__(self, conn):
+                self.conn = conn
+                self.driver_connection = conn
+                
+            def __getattr__(self, item):
+                return getattr(self.conn, item)
+
+        proxy_conn = DBAPIProxy(native_conn)
+
+        # 3. Paksa SQLAlchemy Engine untuk SELALU memakai koneksi DuckDB yang sama
+        engine = create_engine("duckdb:///:memory:", creator=lambda: proxy_conn)
         
-        cursor = driver_conn.cursor()
-        cursor.execute("SET unsafe_disable_etag_checks = true;")
-        cursor.execute(f"CREATE VIEW jobs AS SELECT * FROM read_parquet('{local_parquet_path}');")
-        cursor.close()
-        
-        # Inisialisasi SQLDatabase dari engine
+        # 4. Inisialisasi SQLDatabase dari LangChain
         db = SQLDatabase(engine)
-        return db, engine, raw_conn
+        return db, engine, native_conn
         
     except Exception as e:
         st.error(f"Gagal mengunduh/memuat Parquet: {e}")
         st.stop()
 
-db, engine, raw_conn = get_db()
+db, engine, native_conn = get_db()
 
 
 # ======================================
@@ -103,6 +111,7 @@ if st.button("Tanyakan", type="primary"):
     else:
         with st.spinner("IBM Granite sedang menganalisis data via DuckDB..."):
             try:
+                # Gunakan invoke untuk kompatibilitas LangChain terbaru
                 result = agent_executor.invoke({"input": query})
                 response_text = result.get("output", result) if isinstance(result, dict) else result
                 st.success("Jawaban IBM Granite Agent:")
@@ -116,8 +125,8 @@ if st.button("Tanyakan", type="primary"):
 # ======================================
 with st.expander("📊 Lihat data awal (5 Baris Pertama)"):
     try:
-        # Membaca preview data langsung via SQLAlchemy Engine
-        df_preview = pd.read_sql_query(text("SELECT * FROM jobs LIMIT 5"), engine)
+        # Eksekusi preview langsung melalui native connection DuckDB
+        df_preview = native_conn.execute("SELECT * FROM jobs LIMIT 5").df()
         st.dataframe(df_preview)
     except Exception as e:
         st.error(f"Gagal memuat preview data: {e}")
