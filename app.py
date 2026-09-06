@@ -30,7 +30,7 @@ if not hf_token:
 
 
 # ======================================
-# 2. Inisialisasi DuckDB via SQLAlchemy Engine
+# 2. Inisialisasi DuckDB Native Persisten & SQLDatabase
 # ======================================
 @st.cache_resource
 def get_db():
@@ -43,24 +43,23 @@ def get_db():
             token=hf_token
         )
         
-        # Buat SQLAlchemy Engine khusus DuckDB in-memory
-        engine = create_engine("duckdb:///:memory:")
+        # 1. Buat koneksi native DuckDB tunggal di memori
+        shared_conn = duckdb.connect(":memory:")
+        shared_conn.execute("SET unsafe_disable_etag_checks = true;")
+        shared_conn.execute(f"CREATE VIEW jobs AS SELECT * FROM read_parquet('{local_parquet_path}');")
         
-        # Buat VIEW 'jobs' langsung via koneksi engine
-        with engine.connect() as conn:
-            conn.execute(text("SET unsafe_disable_etag_checks = true;"))
-            conn.execute(text(f"CREATE VIEW jobs AS SELECT * FROM read_parquet('{local_parquet_path}');"))
-            conn.commit()
-            
-        # Bungkus engine ke dalam LangChain SQLDatabase
+        # 2. Paksa SQLAlchemy menggunakan koneksi native yang sama (mencegah DuckDB reset memori)
+        engine = create_engine("duckdb:///:memory:", creator=lambda: shared_conn)
+        
+        # 3. Inisialisasi SQLDatabase dari LangChain
         db = SQLDatabase(engine)
-        return db, engine
+        return db, shared_conn
         
     except Exception as e:
         st.error(f"Gagal mengunduh/memuat Parquet: {e}")
         st.stop()
 
-db, engine = get_db()
+db, shared_conn = get_db()
 
 
 # ======================================
@@ -114,8 +113,8 @@ if st.button("Tanyakan", type="primary"):
 # ======================================
 with st.expander("📊 Lihat data awal (5 Baris Pertama)"):
     try:
-        # Gunakan pandas read_sql_query dengan engine
-        df_preview = pd.read_sql_query(text("SELECT * FROM jobs LIMIT 5"), engine)
+        # Gunakan koneksi DuckDB native secara langsung untuk sampling
+        df_preview = shared_conn.execute("SELECT * FROM jobs LIMIT 5").df()
         st.dataframe(df_preview)
     except Exception as e:
         st.error(f"Gagal memuat preview data: {e}")
