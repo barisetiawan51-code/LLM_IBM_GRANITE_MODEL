@@ -37,7 +37,7 @@ def get_db():
         # Unduh file Parquet dari Hugging Face ke cache lokal
         local_parquet_path = hf_hub_download(
             repo_id="barisetiawan51-code/job_dataset",
-            filename="job_datasett.parquet",
+            filename="job_dataset.parquet",
             repo_type="dataset",
             token=hf_token
         )
