@@ -1,6 +1,4 @@
 import os
-import gc
-import pandas as pd
 import streamlit as st
 from sqlalchemy import create_engine
 from huggingface_hub import hf_hub_download
@@ -21,70 +19,60 @@ hf_token = st.secrets.get("HUGGINGFACEHUB_API_TOKEN") or os.getenv("HUGGINGFACEH
 
 if not hf_token:
     st.title("💼 Job Insights - IBM Granite")
-    st.error("❌ Token `HUGGINGFACEHUB_API_TOKEN` belum disetel.")
-    st.info(
-        "Buka **Settings > Secrets** di Streamlit Cloud dan tambahkan:\n\n"
-        '```toml\nHUGGINGFACEHUB_API_TOKEN = "hf_xxxxxxxxxxxxxxxxxxxx"\n```'
-    )
+    st.error("❌ Token `HUGGINGFACEHUB_API_TOKEN` belum disetel di Secrets.")
     st.stop()
 
 os.environ["HUGGINGFACEHUB_API_TOKEN"] = hf_token
 
-DB_PATH = "/tmp/jobs.db"
 
 # ======================================
-# 2. Inisialisasi Database SQLite Hemat RAM
+# 2. Setup DuckDB Langsung ke File Parquet (Zero-Copy Memory)
 # ======================================
-@st.cache_resource(show_spinner="Sedang menyiapkan database hemat memori...")
+@st.cache_resource(show_spinner="Menyiapkan koneksi dataset...")
 def get_db(token: str):
-    # Jika database lokal file sudah pernah dibuat di session ini, pakai langsung
-    engine = create_engine(f"sqlite:///{DB_PATH}")
+    # Unduh file Parquet saja (disimpan di disk /tmp, tidak masuk RAM)
+    local_parquet = hf_hub_download(
+        repo_id="barisetiawan51-code/job_dataset",
+        filename="job_dataset.parquet",
+        repo_type="dataset",
+        token=token,
+        local_dir="/tmp/dataset"
+    )
 
-    if not os.path.exists(DB_PATH):
-        try:
-            local_parquet_path = hf_hub_download(
-                repo_id="barisetiawan51-code/job_dataset",
-                filename="job_dataset.parquet",
-                repo_type="dataset",
-                token=token,
-                local_dir="/tmp/hf_cache"
-            )
-            df = pd.read_parquet(local_parquet_path)
-        except Exception:
-            url = "https://huggingface.co/datasets/barisetiawan51-code/job_dataset/resolve/main/job_dataset.parquet"
-            df = pd.read_parquet(url, storage_options={"Authorization": f"Bearer {token}"})
+    # Buat engine DuckDB
+    engine = create_engine("duckdb:///:memory:")
 
-        # Masukkan ke database file SQLite bertahap (chunksize) agar RAM tidak lonjak
-        df.to_sql("jobs", con=engine, index=False, if_exists="replace", chunksize=5000)
+    # Buat VIEW yang membaca langsung file Parquet tanpa menduplikasi data ke RAM
+    with engine.connect() as conn:
+        conn.exec_driver_sql(f"""
+            CREATE VIEW jobs AS 
+            SELECT * FROM read_parquet('{local_parquet}');
+        """)
 
-        # Hapus DataFrame dari RAM dan bersihkan memori
-        del df
-        gc.collect()
-
-    # Hubungkan ke LangChain SQLDatabase
     db = SQLDatabase(
         engine=engine,
         include_tables=["jobs"],
-        sample_rows_in_table_info=2  # Hemat token prompt & hemat memori
+        view_support=True,
+        sample_rows_in_table_info=2
     )
     return db, engine
 
 try:
     db, engine = get_db(hf_token)
 except Exception as e:
-    st.error(f"❌ Gagal memuat database: {e}")
+    st.error(f"Gagal memuat database: {e}")
     st.stop()
 
 
 # ======================================
-# 3. Inisialisasi IBM Granite Model
+# 3. Model IBM Granite
 # ======================================
 @st.cache_resource
 def get_llm(token: str):
     return HuggingFaceEndpoint(
         repo_id="ibm-granite/granite-3.0-8b-instruct",
         huggingfacehub_api_token=token,
-        max_new_tokens=300,       # Dibatasi agar respons lebih cepat dan ringan
+        max_new_tokens=300,
         temperature=0.01,
         streaming=False,
         task="text-generation",
@@ -93,12 +81,12 @@ def get_llm(token: str):
 try:
     llm = get_llm(hf_token)
 except Exception as e:
-    st.error(f"❌ Gagal menginisialisasi model LLM: {e}")
+    st.error(f"Gagal memuat model: {e}")
     st.stop()
 
 
 # ======================================
-# 4. Buat SQL Agent Ringan
+# 4. SQL Agent
 # ======================================
 agent_executor = create_sql_agent(
     llm=llm,
@@ -106,39 +94,40 @@ agent_executor = create_sql_agent(
     agent_type="zero-shot-react-description",
     verbose=True,
     handle_parsing_errors=True,
-    max_iterations=4,            # Batasi iterasi agar tidak looping lama
+    max_iterations=4,
     allow_dangerous_code=True
 )
 
 
 # ======================================
-# 5. Tampilan Streamlit UI
+# 5. UI Streamlit
 # ======================================
-st.title("💼 Job Insights dengan IBM Granite")
-st.write("Tanyakan pertanyaan seputar data lowongan kerja.")
+st.title("💼 Job Insights - IBM Granite")
+st.write("Tanyakan statistik atau informasi dari data lowongan kerja.")
 
-query = st.text_input("Masukkan pertanyaan:")
+query = st.text_input("Pertanyaan:")
 
 if st.button("Tanyakan", type="primary"):
     if not query.strip():
-        st.warning("Silakan masukkan pertanyaan terlebih dahulu.")
+        st.warning("Masukkan pertanyaan terlebih dahulu.")
     else:
-        with st.spinner("IBM Granite sedang menganalisis..."):
+        with st.spinner("Menganalisis..."):
             try:
-                result = agent_executor.invoke({"input": query})
-                response_text = result.get("output", result) if isinstance(result, dict) else result
+                res = agent_executor.invoke({"input": query})
+                output = res.get("output", res) if isinstance(res, dict) else res
                 st.success("Jawaban:")
-                st.write(response_text)
+                st.write(output)
             except Exception as e:
-                st.error(f"Gagal memproses pertanyaan: {e}")
+                st.error(f"Terjadi error: {e}")
 
 
 # ======================================
-# 6. Preview Data (Sampling Ringan)
+# 6. Preview Data Ringan
 # ======================================
-with st.expander("📊 Lihat 5 Baris Pertama"):
+with st.expander("📊 Preview 5 Baris Data"):
     try:
+        import pandas as pd
         df_preview = pd.read_sql_query("SELECT * FROM jobs LIMIT 5", engine)
         st.dataframe(df_preview, use_container_width=True)
     except Exception as e:
-        st.error(f"Gagal memuat preview data: {e}")
+        st.error(f"Gagal preview: {e}")
