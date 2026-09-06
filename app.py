@@ -29,7 +29,7 @@ if not replicate_token:
 # ======================================
 # GANTI dengan path repository dataset Hugging Face Anda
 # Contoh: "username_anda/nama_dataset"
-HF_DATASET_REPO = "username_anda/nama_dataset"
+HF_DATASET_REPO = "barisetiawan51-code/job_dataset"
 
 @st.cache_data(show_spinner=False)
 def load_data():
