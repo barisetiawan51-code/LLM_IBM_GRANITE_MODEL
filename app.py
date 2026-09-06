@@ -30,10 +30,10 @@ if not hf_token:
 
 
 # ======================================
-# 2. Wrapper DBAPI Kompatibel SQLAlchemy 2.0
+# 2. Wrapper DBAPI untuk SQLAlchemy 2.0+
 # ======================================
-class DuckDBSQLAlchemyWrapper:
-    """Wrapper untuk menyediakan atribut .connection & .driver_connection untuk SQLAlchemy 2.0+"""
+class DuckDBConnectionWrapper:
+    """Wrapper untuk menyediakan atribut .connection & .driver_connection yang dibutuhkan SQLAlchemy 2.0+"""
     def __init__(self, raw_conn):
         self._raw_conn = raw_conn
 
@@ -65,10 +65,10 @@ def get_db():
         native_conn.execute("SET unsafe_disable_etag_checks = true;")
         native_conn.execute(f"CREATE VIEW jobs AS SELECT * FROM read_parquet('{local_parquet_path}');")
         
-        # 2. Bungkus dengan wrapper kompatibel SQLAlchemy 2.0
-        wrapped_conn = DuckDBSQLAlchemyWrapper(native_conn)
+        # 2. Bungkus koneksi agar memenuhi spesifikasi SQLAlchemy 2.0
+        wrapped_conn = DuckDBConnectionWrapper(native_conn)
         
-        # 3. Buat SQLAlchemy Engine yang SELALU menggunakan koneksi memori ini
+        # 3. Buat SQLAlchemy Engine yang SELALU menggunakan koneksi memori terbungkus ini
         engine = create_engine("duckdb:///:memory:", creator=lambda: wrapped_conn)
         
         # 4. Inisialisasi SQLDatabase dari LangChain
