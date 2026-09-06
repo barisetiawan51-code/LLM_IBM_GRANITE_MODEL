@@ -4,4 +4,4 @@ duckdb-engine
 pyarrow
 langchain
 langchain-community
-replicate
+langchain-huggingface
