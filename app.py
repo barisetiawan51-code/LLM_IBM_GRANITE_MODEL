@@ -1,5 +1,6 @@
 import os
 import streamlit as st
+from huggingface_hub import hf_hub_download
 from langchain_huggingface import HuggingFaceEndpoint
 from langchain_community.utilities import SQLDatabase
 from langchain_community.agent_toolkits import create_sql_agent
@@ -26,25 +27,32 @@ if not hf_token:
 
 
 # ======================================
-# 2. Inisialisasi DuckDB In-Memory & Parquet View
+# 2. Inisialisasi DuckDB via Download Parquet Aman
 # ======================================
 @st.cache_resource
 def init_db():
-    parquet_path = "https://huggingface.co/datasets/barisetiawan51-code/job_dataset/resolve/main/job_datasett.parquet"
-    
-    db = SQLDatabase.from_uri("duckdb:///:memory:")
-    conn = db._engine.raw_connection().connection
-    
-    conn.execute("SET unsafe_disable_etag_checks = true;")
-    conn.execute(f"CREATE VIEW IF NOT EXISTS jobs AS SELECT * FROM read_parquet('{parquet_path}')")
-    
-    return db
+    try:
+        # Unduh file Parquet menggunakan autentikasi token Hugging Face
+        local_parquet_path = hf_hub_download(
+            repo_id="barisetiawan51-code/job_dataset",
+            filename="job_datasett.parquet",
+            repo_type="dataset",
+            token=hf_token
+        )
+        
+        # Buat database in-memory
+        db = SQLDatabase.from_uri("duckdb:///:memory:")
+        conn = db._engine.raw_connection().connection
+        
+        # Buat View dari file Parquet lokal yang terunduh
+        conn.execute(f"CREATE VIEW IF NOT EXISTS jobs AS SELECT * FROM read_parquet('{local_parquet_path}')")
+        return db
+        
+    except Exception as e:
+        st.error(f"Gagal mengunduh/memuat Parquet dari Hugging Face: {e}")
+        st.stop()
 
-try:
-    db = init_db()
-except Exception as e:
-    st.error(f"Gagal memuat dataset Parquet. Detail error: {e}")
-    st.stop()
+db = init_db()
 
 
 # ======================================
