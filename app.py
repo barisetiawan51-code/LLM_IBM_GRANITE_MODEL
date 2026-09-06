@@ -16,7 +16,6 @@ st.set_page_config(
 # ======================================
 # 1. Autentikasi API Token
 # ======================================
-# Mengecek token dari Secrets Streamlit Cloud atau Environment OS
 replicate_token = None
 try:
     if "REPLICATE_API_TOKEN" in st.secrets:
@@ -28,28 +27,28 @@ if not replicate_token:
     replicate_token = os.getenv("REPLICATE_API_TOKEN")
 
 if not replicate_token:
-    st.error("❌ `REPLICATE_API_TOKEN` belum disetel.")
-    st.info("Buka **Settings > Secrets** di Streamlit Cloud, lalu masukkan:\n`REPLICATE_API_TOKEN = 'token_replicate_anda'`")
+    st.error("❌ `REPLICATE_API_TOKEN` belum disetel di Streamlit Secrets.")
     st.stop()
 
 # ======================================
-# 2. Load Dataset dari Hugging Face (Aman dari OOM)
+# 2. Load Dataset Parquet dari Hugging Face
 # ======================================
-# URL file CSV mentah (Raw) dari repositori Hugging Face Anda
-DATASET_RAW_URL = "https://huggingface.co/datasets/barisetiawan51-code/job_dataset/raw/main/job_dataset.csv"
-SAMPLE_ROWS = 25000  # Batasi 25.000 baris agar muat di RAM 1 GB Streamlit Cloud
+# URL file Parquet langsung dari Hugging Face
+PARQUET_URL = "https://huggingface.co/datasets/barisetiawan51-code/job_dataset/resolve/main/job_dataset.parquet"
+SAMPLE_ROWS = 30000  # Membatasi jumlah baris agar tidak crash OOM di RAM 1 GB
 
 @st.cache_data(show_spinner=False)
-def load_data(url, nrows):
-    # Membaca subset data langsung dari stream URL
-    return pd.read_csv(url, nrows=nrows)
+def load_data(url, limit):
+    # Membaca file parquet langsung ke DataFrame
+    df_full = pd.read_parquet(url)
+    # Ambil sampel subset data untuk menghemat RAM dan mempercepat analisis LLM
+    return df_full.head(limit)
 
-with st.spinner(f"Memuat {SAMPLE_ROWS:,} data lowongan kerja..."):
+with st.spinner("Memuat dataset dari Hugging Face ke memori..."):
     try:
-        df = load_data(DATASET_RAW_URL, SAMPLE_ROWS)
+        df = load_data(PARQUET_URL, SAMPLE_ROWS)
     except Exception as e:
-        st.error(f"❌ Gagal memuat data dari Hugging Face: {e}")
-        st.info("Pastikan nama file di repo Hugging Face benar-benar 'job_dataset.csv' dan repo berstatus Public.")
+        st.error(f"❌ Gagal memuat file Parquet: {e}")
         st.stop()
 
 # ======================================
@@ -86,14 +85,14 @@ st.caption(f"Dataset aktif: {len(df):,} baris data lowongan kerja.")
 
 query = st.text_input(
     "Tanyakan sesuatu tentang data:",
-    placeholder="Contoh: Berapa banyak posisi software engineer di data ini?"
+    placeholder="Contoh: Berapa banyak postingan pekerjaan untuk posisi data analyst?"
 )
 
 if st.button("Analisis Data", type="primary"):
     if not query.strip():
         st.warning("Silakan ketik pertanyaan terlebih dahulu.")
     else:
-        with st.spinner("Granite sedang menganalisis DataFrame..."):
+        with st.spinner("Granite sedang menganalisis data..."):
             try:
                 response = agent.invoke(query)
                 st.success("Hasil Analisis:")
@@ -103,10 +102,10 @@ if st.button("Analisis Data", type="primary"):
                 else:
                     st.write(response)
             except Exception as e:
-                st.error(f"Terjadi kendala pemrosesan: {e}")
+                st.error(f"Terjadi kendala: {e}")
 
 # ======================================
-# 6. Sampel Data
+# 6. Preview Data
 # ======================================
-with st.expander("📊 Preview 10 Baris Pertama Data"):
+with st.expander("📊 Preview 10 Baris Pertama"):
     st.dataframe(df.head(10))
