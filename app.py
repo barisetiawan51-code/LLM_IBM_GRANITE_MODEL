@@ -2,6 +2,7 @@ import os
 import duckdb
 import pandas as pd
 import streamlit as st
+from sqlalchemy import create_engine
 from huggingface_hub import hf_hub_download
 from langchain_huggingface import HuggingFaceEndpoint
 from langchain_community.utilities import SQLDatabase
@@ -29,12 +30,12 @@ if not hf_token:
 
 
 # ======================================
-# 2. Inisialisasi DuckDB In-Memory (Sangat Hemat RAM)
+# 2. Inisialisasi DuckDB via SQLAlchemy Engine
 # ======================================
 @st.cache_resource
 def get_db():
     try:
-        # Unduh file Parquet dari HF
+        # Unduh file Parquet dari Hugging Face
         local_parquet_path = hf_hub_download(
             repo_id="barisetiawan51-code/job_dataset",
             filename="job_dataset.parquet",
@@ -42,19 +43,27 @@ def get_db():
             token=hf_token
         )
         
-        # Buat koneksi in-memory DuckDB dan daftarkan VIEW (tidak memakan RAM)
-        conn = duckdb.connect(database=":memory:")
-        conn.execute(f"CREATE VIEW jobs AS SELECT * FROM read_parquet('{local_parquet_path}')")
+        # Buat database file DuckDB terisolasi
+        db_file = "/tmp/jobs_app.duckdb"
+        
+        # Inisialisasi view 'jobs' secara langsung di DuckDB
+        conn = duckdb.connect(db_file)
+        conn.execute("SET unsafe_disable_etag_checks = true;")
+        conn.execute(f"CREATE VIEW IF NOT EXISTS jobs AS SELECT * FROM read_parquet('{local_parquet_path}');")
+        conn.close()
+        
+        # Buat SQLAlchemy Engine agar dikenali oleh LangChain SQLDatabase
+        engine = create_engine(f"duckdb:///{db_file}")
         
         # Hubungkan ke LangChain SQLDatabase
-        db = SQLDatabase(engine=conn, include_tables=["jobs"])
-        return db, conn
+        db = SQLDatabase(engine=engine, include_tables=["jobs"])
+        return db, engine
         
     except Exception as e:
         st.error(f"Gagal mengunduh/memuat Parquet dari Hugging Face: {e}")
         st.stop()
 
-db, duckdb_conn = get_db()
+db, engine = get_db()
 
 
 # ======================================
@@ -108,7 +117,7 @@ if st.button("Tanyakan", type="primary"):
 # ======================================
 with st.expander("📊 Lihat data awal (5 Baris Pertama)"):
     try:
-        df_preview = duckdb_conn.execute("SELECT * FROM jobs LIMIT 5").df()
+        df_preview = pd.read_sql_query("SELECT * FROM jobs LIMIT 5", engine)
         st.dataframe(df_preview)
     except Exception as e:
         st.error(f"Gagal memuat preview data: {e}")
