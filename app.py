@@ -42,7 +42,10 @@ def init_db():
         
         # Buat database in-memory
         db = SQLDatabase.from_uri("duckdb:///:memory:")
-        conn = db._engine.raw_connection().connection
+        
+        # Perbaikan SADeprecationWarning: Gunakan driver_connection
+        raw_conn = db._engine.raw_connection()
+        conn = getattr(raw_conn, 'driver_connection', raw_conn.connection)
         
         # Buat View dari file Parquet lokal yang terunduh
         conn.execute(f"CREATE VIEW IF NOT EXISTS jobs AS SELECT * FROM read_parquet('{local_parquet_path}')")
@@ -56,7 +59,7 @@ db = init_db()
 
 
 # ======================================
-# 3. Inisialisasi IBM Granite via Hugging Face API Gratis
+# 3. Inisialisasi IBM Granite via Hugging Face API
 # ======================================
 llm = HuggingFaceEndpoint(
     repo_id="ibm-granite/granite-3.0-8b-instruct",
@@ -93,10 +96,13 @@ if st.button("Tanyakan", type="primary"):
     else:
         with st.spinner("IBM Granite sedang menganalisis data via DuckDB..."):
             try:
-                # Eksekusi query via SQL Agent
-                response = agent_executor.run(query)
+                # Perbaikan LangChainDeprecationWarning: Gunakan invoke menggantikan run
+                result = agent_executor.invoke({"input": query})
+                
+                # Mengambil output jawaban
+                response_text = result.get("output", result) if isinstance(result, dict) else result
                 st.success("Jawaban IBM Granite Agent:")
-                st.write(response)
+                st.write(response_text)
             except Exception as e:
                 st.error(f"Terjadi error saat mengeksekusi pertanyaan: {e}")
 
@@ -106,7 +112,8 @@ if st.button("Tanyakan", type="primary"):
 # ======================================
 with st.expander("📊 Lihat data awal (5 Baris Pertama)"):
     try:
-        conn = db._engine.raw_connection().connection
+        raw_conn = db._engine.raw_connection()
+        conn = getattr(raw_conn, 'driver_connection', raw_conn.connection)
         df_preview = conn.execute("SELECT * FROM jobs LIMIT 5").df()
         st.dataframe(df_preview)
     except Exception as e:
