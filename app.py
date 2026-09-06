@@ -1,27 +1,27 @@
 import os
 import streamlit as st
-from langchain_community.llms import Replicate
+from langchain_huggingface import HuggingFaceEndpoint
 from langchain_community.utilities import SQLDatabase
 from langchain_community.agent_toolkits import create_sql_agent
 
 # Config halaman Streamlit
 st.set_page_config(
-    page_title="Job Insights - IBM Granite", 
+    page_title="Job Insights - IBM Granite (Gratis)", 
     page_icon="💼",
     layout="wide"
 )
 
 # ======================================
-# 1. Ambil API Token dari Streamlit Secrets / Environment Variable
+# 1. Ambil API Token Hugging Face Gratis
 # ======================================
-if "REPLICATE_API_TOKEN" in st.secrets:
-    replicate_token = st.secrets["REPLICATE_API_TOKEN"]
-    os.environ["REPLICATE_API_TOKEN"] = replicate_token
+if "HUGGINGFACEHUB_API_TOKEN" in st.secrets:
+    hf_token = st.secrets["HUGGINGFACEHUB_API_TOKEN"]
+    os.environ["HUGGINGFACEHUB_API_TOKEN"] = hf_token
 else:
-    replicate_token = os.getenv("REPLICATE_API_TOKEN")
+    hf_token = os.getenv("HUGGINGFACEHUB_API_TOKEN")
 
-if not replicate_token:
-    st.error("❌ REPLICATE_API_TOKEN tidak ditemukan. Harap set di Streamlit Secrets atau .env!")
+if not hf_token:
+    st.error("❌ HUGGINGFACEHUB_API_TOKEN tidak ditemukan. Harap set di Streamlit Secrets atau .env!")
     st.stop()
 
 
@@ -30,16 +30,11 @@ if not replicate_token:
 # ======================================
 @st.cache_resource
 def init_db():
-    # Direct download link Parquet dari Hugging Face
     parquet_path = "https://huggingface.co/datasets/barisetiawan51-code/job_dataset/resolve/main/job_datasett.parquet"
     
-    # 1. Gunakan database in-memory agar tidak memicu error permission/file lock
     db = SQLDatabase.from_uri("duckdb:///:memory:")
-    
-    # 2. Ambil koneksi DuckDB internal
     conn = db._engine.raw_connection().connection
     
-    # 3. Nonaktifkan pengecekan ETag dan buat View virtual dari Parquet
     conn.execute("SET unsafe_disable_etag_checks = true;")
     conn.execute(f"CREATE VIEW IF NOT EXISTS jobs AS SELECT * FROM read_parquet('{parquet_path}')")
     
@@ -53,21 +48,18 @@ except Exception as e:
 
 
 # ======================================
-# 3. Inisialisasi LLM IBM Granite
+# 3. Inisialisasi IBM Granite via Hugging Face API Gratis
 # ======================================
-llm = Replicate(
-    model="ibm-granite/granite-3.3-8b-instruct",
-    replicate_api_token=replicate_token,
-    model_kwargs={
-        "temperature": 0.1,
-        "max_new_tokens": 300,
-        "top_p": 0.9,
-    },
+llm = HuggingFaceEndpoint(
+    repo_id="ibm-granite/granite-3.0-8b-instruct",
+    huggingfacehub_api_token=hf_token,
+    max_new_tokens=300,
+    temperature=0.1,
 )
 
 
 # ======================================
-# 4. Buat SQL Agent (Pengganti Pandas Agent)
+# 4. Buat SQL Agent
 # ======================================
 agent_executor = create_sql_agent(
     llm=llm,
@@ -95,7 +87,7 @@ if st.button("Tanyakan", type="primary"):
             try:
                 # Eksekusi query via SQL Agent
                 response = agent_executor.run(query)
-                st.success("Jawaban Granite Agent:")
+                st.success("Jawaban IBM Granite Agent:")
                 st.write(response)
             except Exception as e:
                 st.error(f"Terjadi error saat mengeksekusi pertanyaan: {e}")
