@@ -41,7 +41,7 @@ CACHE_DIR = "/tmp/dataset"
 # ======================================
 @st.cache_resource(show_spinner="Sedang menyiapkan database lowongan kerja...")
 def get_db(token: str):
-    # 1. Unduh file Parquet dari Hugging Face Hub jika belum ada di lokal
+    # 1. Unduh file Parquet dari Hugging Face Hub jika belum ada
     try:
         local_parquet = hf_hub_download(
             repo_id="barisetiawan51-code/job_dataset",
@@ -51,10 +51,9 @@ def get_db(token: str):
             local_dir=CACHE_DIR
         )
     except Exception:
-        # Alternatif fallback via direct URL resolve
         local_parquet = "https://huggingface.co/datasets/barisetiawan51-code/job_dataset/resolve/main/job_dataset.parquet"
 
-    # 2. Inisialisasi file database DuckDB fisik jika belum dibuat
+    # 2. Buat database DuckDB fisik di disk /tmp jika belum ada
     if not os.path.exists(DB_PATH):
         raw_conn = duckdb.connect(DB_PATH)
         raw_conn.execute(f"""
@@ -83,17 +82,20 @@ except Exception as e:
 
 
 # ======================================
-# 3. Inisialisasi Model LLM (IBM Granite)
+# 3. Inisialisasi Model LLM (IBM Granite via Router HF)
 # ======================================
 @st.cache_resource
 def get_llm(token: str):
+    # Gunakan direct router URL untuk menghindari kendala DNS api-inference lama
+    endpoint_url = "https://router.huggingface.co/hf-inference/models/ibm-granite/granite-3.0-8b-instruct"
+    
     return HuggingFaceEndpoint(
-        repo_id="ibm-granite/granite-3.0-8b-instruct",
+        endpoint_url=endpoint_url,
         huggingfacehub_api_token=token,
         max_new_tokens=350,
         temperature=0.01,
         streaming=False,
-        task="text-generation",
+        timeout=120,
     )
 
 try:
