@@ -1,4 +1,5 @@
 import os
+import duckdb
 import pandas as pd
 import streamlit as st
 from huggingface_hub import hf_hub_download
@@ -28,12 +29,12 @@ if not hf_token:
 
 
 # ======================================
-# 2. Inisialisasi DuckDB via Download Parquet Aman
+# 2. Inisialisasi DuckDB File-Based (Stabil & Persisten)
 # ======================================
 @st.cache_resource
 def init_db():
     try:
-        # Unduh file Parquet menggunakan autentikasi token Hugging Face
+        # 1. Unduh file Parquet menggunakan autentikasi token Hugging Face
         local_parquet_path = hf_hub_download(
             repo_id="barisetiawan51-code/job_dataset",
             filename="job_datasett.parquet",
@@ -41,24 +42,27 @@ def init_db():
             token=hf_token
         )
         
-        # Buat database in-memory SQLDatabase
-        db = SQLDatabase.from_uri("duckdb:///:memory:")
+        # 2. Buat file duckdb lokal persisten (mencegah kehilangan tabel di memory)
+        db_file_path = "jobs_duckdb.db"
         
-        # Eksekusi SQL langsung di pool engine agar View 'jobs' terdaftar permanen di instance in-memory ini
-        raw_conn = db._engine.raw_connection()
-        try:
-            cursor = raw_conn.cursor()
-            cursor.execute(f"CREATE VIEW jobs AS SELECT * FROM read_parquet('{local_parquet_path}');")
-        finally:
-            raw_conn.close()
+        # Jika file DB lama ada, bersihkan terlebih dahulu
+        if os.path.exists(db_file_path):
+            os.remove(db_file_path)
             
-        return db
+        # Inisialisasi koneksi DuckDB dan buat VIEW
+        conn = duckdb.connect(db_file_path)
+        conn.execute(f"CREATE VIEW jobs AS SELECT * FROM read_parquet('{local_parquet_path}');")
+        conn.close()
+        
+        # 3. Hubungkan LangChain ke file DuckDB lokal
+        db = SQLDatabase.from_uri(f"duckdb:///{db_file_path}")
+        return db, db_file_path
         
     except Exception as e:
         st.error(f"Gagal mengunduh/memuat Parquet dari Hugging Face: {e}")
         st.stop()
 
-db = init_db()
+db, db_file_path = init_db()
 
 
 # ======================================
@@ -114,8 +118,10 @@ if st.button("Tanyakan", type="primary"):
 # ======================================
 with st.expander("📊 Lihat data awal (5 Baris Pertama)"):
     try:
-        # Jalankan query preview langsung via SQLAlchemy Engine
-        df_preview = pd.read_sql_query("SELECT * FROM jobs LIMIT 5", db._engine)
+        # Membaca data langsung dari DuckDB file
+        conn = duckdb.connect(db_file_path, read_only=True)
+        df_preview = conn.execute("SELECT * FROM jobs LIMIT 5").df()
+        conn.close()
         st.dataframe(df_preview)
     except Exception as e:
         st.error(f"Gagal memuat preview data: {e}")
