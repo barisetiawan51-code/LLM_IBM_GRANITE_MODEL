@@ -1,6 +1,8 @@
 streamlit
 pandas
 pyarrow
+fsspec
+aiohttp
 langchain
 langchain-community
 langchain-experimental
