@@ -1,6 +1,6 @@
 import os
+import pandas as pd
 import streamlit as st
-from sqlalchemy import text
 from huggingface_hub import hf_hub_download
 from langchain_huggingface import HuggingFaceEndpoint
 from langchain_community.utilities import SQLDatabase
@@ -41,13 +41,16 @@ def init_db():
             token=hf_token
         )
         
-        # Buat database in-memory
+        # Buat database in-memory SQLDatabase
         db = SQLDatabase.from_uri("duckdb:///:memory:")
         
-        # Perbaikan SADeprecationWarning: Gunakan engine.connect() standar SQLAlchemy
-        with db._engine.connect() as conn:
-            conn.execute(text(f"CREATE VIEW IF NOT EXISTS jobs AS SELECT * FROM read_parquet('{local_parquet_path}')"))
-            conn.commit()
+        # Eksekusi SQL langsung di pool engine agar View 'jobs' terdaftar permanen di instance in-memory ini
+        raw_conn = db._engine.raw_connection()
+        try:
+            cursor = raw_conn.cursor()
+            cursor.execute(f"CREATE VIEW jobs AS SELECT * FROM read_parquet('{local_parquet_path}');")
+        finally:
+            raw_conn.close()
             
         return db
         
@@ -111,10 +114,8 @@ if st.button("Tanyakan", type="primary"):
 # ======================================
 with st.expander("📊 Lihat data awal (5 Baris Pertama)"):
     try:
-        # Perbaikan SADeprecationWarning: Menggunakan pandas read_sql
-        import pandas as pd
-        with db._engine.connect() as conn:
-            df_preview = pd.read_sql(text("SELECT * FROM jobs LIMIT 5"), conn)
+        # Jalankan query preview langsung via SQLAlchemy Engine
+        df_preview = pd.read_sql_query("SELECT * FROM jobs LIMIT 5", db._engine)
         st.dataframe(df_preview)
     except Exception as e:
         st.error(f"Gagal memuat preview data: {e}")
