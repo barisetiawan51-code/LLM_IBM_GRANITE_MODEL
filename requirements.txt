@@ -1,0 +1,7 @@
+streamlit
+duckdb
+duckdb-engine
+pyarrow
+langchain
+langchain-community
+replicate
