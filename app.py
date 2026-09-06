@@ -2,6 +2,7 @@ import os
 import duckdb
 import pandas as pd
 import streamlit as st
+from sqlalchemy import create_engine
 from huggingface_hub import hf_hub_download
 from langchain_huggingface import HuggingFaceEndpoint
 from langchain_community.utilities import SQLDatabase
@@ -29,7 +30,7 @@ if not hf_token:
 
 
 # ======================================
-# 2. Inisialisasi DuckDB Persisten & Safe Connection
+# 2. Inisialisasi DuckDB File-Based dengan `connect_args`
 # ======================================
 @st.cache_resource
 def get_db():
@@ -44,14 +45,20 @@ def get_db():
         
         db_file = "/tmp/jobs_persistent.duckdb"
         
-        # Buat/Perbarui view di file DuckDB lokal
+        # Buat database file dan daftarkan view 'jobs' awal
         conn = duckdb.connect(db_file)
         conn.execute("SET unsafe_disable_etag_checks = true;")
         conn.execute(f"CREATE VIEW IF NOT EXISTS jobs AS SELECT * FROM read_parquet('{local_parquet_path}');")
         conn.close()
         
-        # Hubungkan SQLDatabase LangChain ke DuckDB dengan mode read_only agar kompatibel multi-thread
-        db = SQLDatabase.from_uri(f"duckdb:///{db_file}?read_only=true")
+        # Buat SQLAlchemy Engine menggunakan connect_args resmi DuckDB
+        engine = create_engine(
+            f"duckdb:///{db_file}",
+            connect_args={"read_only": True}
+        )
+        
+        # Hubungkan SQLDatabase LangChain dari Engine
+        db = SQLDatabase(engine)
         return db, db_file
         
     except Exception as e:
@@ -112,7 +119,7 @@ if st.button("Tanyakan", type="primary"):
 # ======================================
 with st.expander("📊 Lihat data awal (5 Baris Pertama)"):
     try:
-        # Gunakan engine internal milik db LangChain untuk query preview agar tidak bentrok koneksi
+        # Gunakan engine milik db LangChain untuk pratinjau data
         df_preview = pd.read_sql_query("SELECT * FROM jobs LIMIT 5", db._engine)
         st.dataframe(df_preview)
     except Exception as e:
