@@ -29,7 +29,7 @@ if not hf_token:
 
 
 # ======================================
-# 2. Inisialisasi DuckDB via Shared SQLAlchemy Connection Engine
+# 2. Inisialisasi DuckDB dengan Mode AUTOCOMMIT (Tanpa Transaksi Bentrok)
 # ======================================
 @st.cache_resource
 def get_db():
@@ -45,20 +45,24 @@ def get_db():
         # Buat engine SQLAlchemy untuk DuckDB in-memory
         engine = create_engine("duckdb:///:memory:")
         
-        # Buka koneksi persisten dari pool agar memori database tidak di-reset
-        conn = engine.connect()
-        conn.execute(text("SET unsafe_disable_etag_checks = true;"))
-        conn.execute(text(f"CREATE VIEW jobs AS SELECT * FROM read_parquet('{local_parquet_path}');"))
+        # Eksekusi DDL di level driver DBAPI langsung untuk menghindari blok transaksi SQLAlchemy
+        raw_conn = engine.raw_connection()
+        driver_conn = getattr(raw_conn, 'driver_connection', raw_conn.connection)
+        
+        cursor = driver_conn.cursor()
+        cursor.execute("SET unsafe_disable_etag_checks = true;")
+        cursor.execute(f"CREATE VIEW jobs AS SELECT * FROM read_parquet('{local_parquet_path}');")
+        cursor.close()
         
         # Inisialisasi SQLDatabase dari engine
         db = SQLDatabase(engine)
-        return db, engine, conn
+        return db, engine, raw_conn
         
     except Exception as e:
         st.error(f"Gagal mengunduh/memuat Parquet: {e}")
         st.stop()
 
-db, engine, persistent_conn = get_db()
+db, engine, raw_conn = get_db()
 
 
 # ======================================
@@ -112,8 +116,8 @@ if st.button("Tanyakan", type="primary"):
 # ======================================
 with st.expander("📊 Lihat data awal (5 Baris Pertama)"):
     try:
-        # Gunakan pandas read_sql_query dengan koneksi aktif
-        df_preview = pd.read_sql_query(text("SELECT * FROM jobs LIMIT 5"), persistent_conn)
+        # Membaca preview data langsung via SQLAlchemy Engine
+        df_preview = pd.read_sql_query(text("SELECT * FROM jobs LIMIT 5"), engine)
         st.dataframe(df_preview)
     except Exception as e:
         st.error(f"Gagal memuat preview data: {e}")
