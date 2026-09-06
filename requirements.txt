@@ -1,8 +1,7 @@
 streamlit>=1.35.0
-duckdb>=1.0.0
-duckdb-engine>=0.13.0
 pandas>=2.0.0
 pyarrow>=15.0.0
+fastparquet>=2024.2.0
 sqlalchemy>=2.0.0
 huggingface-hub>=0.23.0
 langchain>=0.2.0
