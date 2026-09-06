@@ -1,8 +1,9 @@
 streamlit
 duckdb
 duckdb-engine
-pyarrow
-huggingface_hub
+pandas
+sqlalchemy
+huggingface-hub
 langchain
 langchain-community
 langchain-huggingface
