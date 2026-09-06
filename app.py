@@ -30,7 +30,7 @@ if not hf_token:
 
 
 # ======================================
-# 2. Inisialisasi DuckDB File-Based dengan `connect_args`
+# 2. Inisialisasi DuckDB File-Based
 # ======================================
 @st.cache_resource
 def get_db():
@@ -45,20 +45,20 @@ def get_db():
         
         db_file = "/tmp/jobs_persistent.duckdb"
         
-        # Buat database file dan daftarkan view 'jobs' awal
+        # Buat database file dan daftarkan view 'jobs'
         conn = duckdb.connect(db_file)
         conn.execute("SET unsafe_disable_etag_checks = true;")
         conn.execute(f"CREATE VIEW IF NOT EXISTS jobs AS SELECT * FROM read_parquet('{local_parquet_path}');")
         conn.close()
         
-        # Buat SQLAlchemy Engine menggunakan connect_args resmi DuckDB
+        # Inisialisasi Engine SQLAlchemy
         engine = create_engine(
             f"duckdb:///{db_file}",
             connect_args={"read_only": True}
         )
         
-        # Hubungkan SQLDatabase LangChain dari Engine
-        db = SQLDatabase(engine)
+        # Deklarasikan include_tables agar LangChain tidak bingung membaca skema
+        db = SQLDatabase(engine, include_tables=["jobs"])
         return db, db_file
         
     except Exception as e:
@@ -119,7 +119,6 @@ if st.button("Tanyakan", type="primary"):
 # ======================================
 with st.expander("📊 Lihat data awal (5 Baris Pertama)"):
     try:
-        # Gunakan engine milik db LangChain untuk pratinjau data
         df_preview = pd.read_sql_query("SELECT * FROM jobs LIMIT 5", db._engine)
         st.dataframe(df_preview)
     except Exception as e:
