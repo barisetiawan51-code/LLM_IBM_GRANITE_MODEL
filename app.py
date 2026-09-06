@@ -1,4 +1,6 @@
 import os
+import duckdb
+import pandas as pd
 import streamlit as st
 from sqlalchemy import create_engine
 from huggingface_hub import hf_hub_download
@@ -6,6 +8,9 @@ from langchain_huggingface import HuggingFaceEndpoint
 from langchain_community.utilities import SQLDatabase
 from langchain_community.agent_toolkits import create_sql_agent
 
+# ======================================
+# Konfigurasi Halaman Streamlit
+# ======================================
 st.set_page_config(
     page_title="Job Insights - IBM Granite",
     page_icon="💼",
@@ -13,42 +18,55 @@ st.set_page_config(
 )
 
 # ======================================
-# 1. Ambil API Token Hugging Face
+# 1. Validasi Token Hugging Face
 # ======================================
 hf_token = st.secrets.get("HUGGINGFACEHUB_API_TOKEN") or os.getenv("HUGGINGFACEHUB_API_TOKEN")
 
 if not hf_token:
     st.title("💼 Job Insights - IBM Granite")
-    st.error("❌ Token `HUGGINGFACEHUB_API_TOKEN` belum disetel di Secrets.")
+    st.error("❌ Token `HUGGINGFACEHUB_API_TOKEN` belum ditemukan.")
+    st.info(
+        "Silakan buka **Settings > Secrets** di Streamlit Cloud, lalu tambahkan:\n\n"
+        '```toml\nHUGGINGFACEHUB_API_TOKEN = "hf_xxxxxxxxxxxxxxxxxxxx"\n```'
+    )
     st.stop()
 
 os.environ["HUGGINGFACEHUB_API_TOKEN"] = hf_token
 
+DB_PATH = "/tmp/jobs.duckdb"
+CACHE_DIR = "/tmp/dataset"
 
 # ======================================
-# 2. Setup DuckDB Langsung ke File Parquet (Zero-Copy Memory)
+# 2. Inisialisasi Database DuckDB (Hemat RAM & Persisten)
 # ======================================
-@st.cache_resource(show_spinner="Menyiapkan koneksi dataset...")
+@st.cache_resource(show_spinner="Sedang menyiapkan database lowongan kerja...")
 def get_db(token: str):
-    # Unduh file Parquet saja (disimpan di disk /tmp, tidak masuk RAM)
-    local_parquet = hf_hub_download(
-        repo_id="barisetiawan51-code/job_dataset",
-        filename="job_dataset.parquet",
-        repo_type="dataset",
-        token=token,
-        local_dir="/tmp/dataset"
-    )
+    # 1. Unduh file Parquet dari Hugging Face Hub jika belum ada di lokal
+    try:
+        local_parquet = hf_hub_download(
+            repo_id="barisetiawan51-code/job_dataset",
+            filename="job_dataset.parquet",
+            repo_type="dataset",
+            token=token,
+            local_dir=CACHE_DIR
+        )
+    except Exception:
+        # Alternatif fallback via direct URL resolve
+        local_parquet = "https://huggingface.co/datasets/barisetiawan51-code/job_dataset/resolve/main/job_dataset.parquet"
 
-    # Buat engine DuckDB
-    engine = create_engine("duckdb:///:memory:")
-
-    # Buat VIEW yang membaca langsung file Parquet tanpa menduplikasi data ke RAM
-    with engine.connect() as conn:
-        conn.exec_driver_sql(f"""
-            CREATE VIEW jobs AS 
+    # 2. Inisialisasi file database DuckDB fisik jika belum dibuat
+    if not os.path.exists(DB_PATH):
+        raw_conn = duckdb.connect(DB_PATH)
+        raw_conn.execute(f"""
+            CREATE TABLE jobs AS 
             SELECT * FROM read_parquet('{local_parquet}');
         """)
+        raw_conn.close()
 
+    # 3. Hubungkan SQLAlchemy Engine ke database DuckDB fisik
+    engine = create_engine(f"duckdb:///{DB_PATH}")
+
+    # 4. Hubungkan ke LangChain SQLDatabase
     db = SQLDatabase(
         engine=engine,
         include_tables=["jobs"],
@@ -60,19 +78,19 @@ def get_db(token: str):
 try:
     db, engine = get_db(hf_token)
 except Exception as e:
-    st.error(f"Gagal memuat database: {e}")
+    st.error(f"❌ Gagal memuat database: {e}")
     st.stop()
 
 
 # ======================================
-# 3. Model IBM Granite
+# 3. Inisialisasi Model LLM (IBM Granite)
 # ======================================
 @st.cache_resource
 def get_llm(token: str):
     return HuggingFaceEndpoint(
         repo_id="ibm-granite/granite-3.0-8b-instruct",
         huggingfacehub_api_token=token,
-        max_new_tokens=300,
+        max_new_tokens=350,
         temperature=0.01,
         streaming=False,
         task="text-generation",
@@ -81,12 +99,12 @@ def get_llm(token: str):
 try:
     llm = get_llm(hf_token)
 except Exception as e:
-    st.error(f"Gagal memuat model: {e}")
+    st.error(f"❌ Gagal menginisialisasi model IBM Granite: {e}")
     st.stop()
 
 
 # ======================================
-# 4. SQL Agent
+# 4. Buat Text-to-SQL Agent
 # ======================================
 agent_executor = create_sql_agent(
     llm=llm,
@@ -100,34 +118,36 @@ agent_executor = create_sql_agent(
 
 
 # ======================================
-# 5. UI Streamlit
+# 5. Antarmuka (User Interface) Streamlit
 # ======================================
-st.title("💼 Job Insights - IBM Granite")
-st.write("Tanyakan statistik atau informasi dari data lowongan kerja.")
+st.title("💼 Job Insights dengan IBM Granite")
+st.write(
+    "Tanyakan insight data lowongan pekerjaan, contoh: "
+    "*Berapa jumlah pekerjaan untuk posisi Data Analyst?*"
+)
 
-query = st.text_input("Pertanyaan:")
+query = st.text_input("Pertanyaan Anda:")
 
 if st.button("Tanyakan", type="primary"):
     if not query.strip():
-        st.warning("Masukkan pertanyaan terlebih dahulu.")
+        st.warning("Silakan masukkan pertanyaan terlebih dahulu.")
     else:
-        with st.spinner("Menganalisis..."):
+        with st.spinner("IBM Granite sedang menganalisis database..."):
             try:
-                res = agent_executor.invoke({"input": query})
-                output = res.get("output", res) if isinstance(res, dict) else res
+                result = agent_executor.invoke({"input": query})
+                response_text = result.get("output", result) if isinstance(result, dict) else result
                 st.success("Jawaban:")
-                st.write(output)
+                st.write(response_text)
             except Exception as e:
-                st.error(f"Terjadi error: {e}")
+                st.error(f"Terjadi kendala saat memproses query: {e}")
 
 
 # ======================================
-# 6. Preview Data Ringan
+# 6. Preview Sampel Data (5 Baris Pertama)
 # ======================================
-with st.expander("📊 Preview 5 Baris Data"):
+with st.expander("📊 Pratinjau 5 Baris Pertama Data"):
     try:
-        import pandas as pd
         df_preview = pd.read_sql_query("SELECT * FROM jobs LIMIT 5", engine)
         st.dataframe(df_preview, use_container_width=True)
     except Exception as e:
-        st.error(f"Gagal preview: {e}")
+        st.error(f"Gagal memuat pratinjau data: {e}")
