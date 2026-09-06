@@ -36,7 +36,7 @@ if not replicate_token:
 # 2. Load Parquet Parsial via fsspec (Hemat RAM)
 # ======================================
 PARQUET_URL = "https://huggingface.co/datasets/barisetiawan51-code/job_dataset/resolve/main/job_dataset.parquet"
-SAMPLE_ROWS = 20000
+SAMPLE_ROWS = 2000
 
 @st.cache_data(show_spinner=False)
 def load_data(url, limit):
