@@ -1,7 +1,8 @@
 import os
 import streamlit as st
 import pandas as pd
-import pyarrow.dataset as ds
+import pyarrow.parquet as pq
+import fsspec
 from langchain_community.llms import Replicate
 from langchain_experimental.agents import create_pandas_dataframe_agent
 
@@ -32,28 +33,30 @@ if not replicate_token:
     st.stop()
 
 # ======================================
-# 2. Load Dataset Parquet (Streaming / Hemat RAM)
+# 2. Load Parquet Parsial via fsspec (Hemat RAM)
 # ======================================
 PARQUET_URL = "https://huggingface.co/datasets/barisetiawan51-code/job_dataset/resolve/main/job_dataset.parquet"
-SAMPLE_ROWS = 20000  # Membatasi 20.000 baris agar aman dari limit 1 GB RAM
+SAMPLE_ROWS = 20000
 
 @st.cache_data(show_spinner=False)
 def load_data(url, limit):
-    # Membuka skema dataset tanpa memuat seluruh 726 MB ke RAM
-    dataset = ds.dataset(url, format="parquet")
-    
-    # Ambil batch data pertama saja sampai batas limit
-    records = []
-    total_count = 0
-    for batch in dataset.to_batches():
-        batch_df = batch.to_pandas()
-        records.append(batch_df)
-        total_count += len(batch_df)
-        if total_count >= limit:
-            break
-            
-    df_sample = pd.concat(records, ignore_index=True)
-    return df_sample.head(limit)
+    # fsspec menangani protokol HTTP/HTTPS tanpa memuat file 726 MB secara utuh
+    with fsspec.open(url, mode="rb") as f:
+        parquet_file = pq.ParquetFile(f)
+        
+        # Baca row group awal saja sesuai kebutuhan sampel
+        batches = []
+        total_rows = 0
+        for i in range(parquet_file.num_row_groups):
+            table_batch = parquet_file.read_row_group(i)
+            df_batch = table_batch.to_pandas()
+            batches.append(df_batch)
+            total_rows += len(df_batch)
+            if total_rows >= limit:
+                break
+                
+        df_final = pd.concat(batches, ignore_index=True)
+        return df_final.head(limit)
 
 with st.spinner("Mengambil sebagian data lowongan kerja dari Hugging Face..."):
     try:
@@ -89,10 +92,10 @@ agent = create_pandas_dataframe_agent(
 )
 
 # ======================================
-# 5. Antarmuka Pengguna (UI)
+# 5. Antarmuka Pengguna (Streamlit UI)
 # ======================================
 st.title("💼 Job Insights dengan Granite + Pandas Agent")
-st.caption(f"Dataset aktif: {len(df):,} baris sampel lowongan kerja.")
+st.caption(f"Dataset aktif: {len(df):,} baris data lowongan kerja.")
 
 query = st.text_input(
     "Tanyakan sesuatu tentang data:",
@@ -101,7 +104,7 @@ query = st.text_input(
 
 if st.button("Analisis Data", type="primary"):
     if not query.strip():
-        st.warning("Silakan ketik pertanyaan terlebih dahulu.")
+        st.warning("⚠️ Silakan ketik pertanyaan terlebih dahulu.")
     else:
         with st.spinner("Granite sedang menganalisis data..."):
             try:
