@@ -1,8 +1,8 @@
 import os
-import duckdb
 import pandas as pd
 import streamlit as st
 from sqlalchemy import create_engine
+from sqlalchemy.pool import StaticPool
 from huggingface_hub import hf_hub_download
 from langchain_huggingface import HuggingFaceEndpoint
 from langchain_community.utilities import SQLDatabase
@@ -30,7 +30,7 @@ if not hf_token:
 
 
 # ======================================
-# 2. Inisialisasi DuckDB & SQLAlchemy
+# 2. Inisialisasi Database via SQLite & SQLAlchemy
 # ======================================
 @st.cache_resource(show_spinner="Sedang mengunduh dataset dan menyiapkan database...")
 def get_db(token: str):
@@ -42,25 +42,27 @@ def get_db(token: str):
         token=token
     )
 
-    # 2. Buat satu raw connection in-memory agar data tidak lenyap
-    raw_conn = duckdb.connect(":memory:")
-    raw_conn.execute(f"""
-        CREATE TABLE jobs AS 
-        SELECT * FROM read_parquet('{local_parquet_path}');
-    """)
+    # 2. Baca file Parquet ke DataFrame
+    df = pd.read_parquet(local_parquet_path)
 
-    # 3. Ikat engine ke raw connection yang sama via creator
-    engine = create_engine("duckdb:///:memory:", creator=lambda: raw_conn)
+    # 3. Gunakan SQLite in-memory dengan StaticPool agar tabel tidak hilang antar-koneksi
+    engine = create_engine(
+        "sqlite:///:memory:",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool
+    )
 
-    # 4. Hubungkan ke LangChain SQLDatabase
+    # 4. Tulis langsung ke tabel 'jobs'
+    df.to_sql("jobs", con=engine, index=False, if_exists="replace")
+
+    # 5. Hubungkan ke LangChain SQLDatabase
     db = SQLDatabase(
         engine=engine,
-        include_tables=["jobs"],
-        view_support=True
+        include_tables=["jobs"]
     )
     return db, engine
 
-# Jalankan inisialisasi database
+# Eksekusi koneksi database
 try:
     db, engine = get_db(hf_token)
 except Exception as e:
