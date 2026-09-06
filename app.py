@@ -1,5 +1,6 @@
 import os
 import duckdb
+import sqlite3
 import pandas as pd
 import streamlit as st
 from huggingface_hub import hf_hub_download
@@ -29,37 +30,35 @@ if not hf_token:
 
 
 # ======================================
-# 2. Inisialisasi DuckDB File-Based di /tmp (Anti-Crash & Persisten)
+# 2. Inisialisasi Database SQLite via DuckDB Parquet Reader
 # ======================================
 @st.cache_resource
 def get_db():
     try:
-        # Unduh file Parquet dari Hugging Face ke cache lokal
+        # Unduh file Parquet sesuai nama & path di Hugging Face (726 MB)
         local_parquet_path = hf_hub_download(
             repo_id="barisetiawan51-code/job_dataset",
-            filename="job_dataset.parquet",
+            filename="job_dataset/job_dataset.parquet",
             repo_type="dataset",
             token=hf_token
         )
         
-        # Path file DuckDB lokal di folder temporary server
-        db_path = "/tmp/jobs_duckdb.db"
+        # Baca Parquet menggunakan DuckDB, lalu ubah ke DataFrame Pandas
+        df = duckdb.query(f"SELECT * FROM read_parquet('{local_parquet_path}')").df()
         
-        # Inisialisasi dan daftarkan VIEW ke file database
-        conn = duckdb.connect(db_path)
-        conn.execute("SET unsafe_disable_etag_checks = true;")
-        conn.execute(f"CREATE VIEW IF NOT EXISTS jobs AS SELECT * FROM read_parquet('{local_parquet_path}');")
-        conn.close()
+        # Simpan DataFrame ke SQLite in-memory yang persisten & aman dibaca bersama
+        conn = sqlite3.connect("file:jobdb?mode=memory&cache=shared", uri=True)
+        df.to_sql("jobs", conn, if_exists="replace", index=False)
         
-        # Hubungkan LangChain ke file DuckDB lokal via URI standar
-        db = SQLDatabase.from_uri(f"duckdb:///{db_path}")
-        return db, db_path
+        # Hubungkan LangChain ke SQLite
+        db = SQLDatabase.from_uri("sqlite:///file:jobdb?mode=memory&cache=shared")
+        return db, conn
         
     except Exception as e:
-        st.error(f"Gagal mengunduh/memuat Parquet: {e}")
+        st.error(f"Gagal mengunduh/memuat Parquet dari Hugging Face: {e}")
         st.stop()
 
-db, db_path = get_db()
+db, sqlite_conn = get_db()
 
 
 # ======================================
@@ -88,7 +87,7 @@ agent_executor = create_sql_agent(
 # ======================================
 # 5. Streamlit UI
 # ======================================
-st.title("💼 Job Insights dengan IBM Granite + DuckDB")
+st.title("💼 Job Insights dengan IBM Granite")
 st.write("Tanyakan pertanyaan seputar lowongan kerja, contoh: "
          "*berapa banyak postingan job di bidang digital marketing pada tahun 2022?*")
 
@@ -98,7 +97,7 @@ if st.button("Tanyakan", type="primary"):
     if not query.strip():
         st.warning("Silakan masukkan pertanyaan terlebih dahulu.")
     else:
-        with st.spinner("IBM Granite sedang menganalisis data via DuckDB..."):
+        with st.spinner("IBM Granite sedang menganalisis data..."):
             try:
                 result = agent_executor.invoke({"input": query})
                 response_text = result.get("output", result) if isinstance(result, dict) else result
@@ -113,9 +112,7 @@ if st.button("Tanyakan", type="primary"):
 # ======================================
 with st.expander("📊 Lihat data awal (5 Baris Pertama)"):
     try:
-        conn = duckdb.connect(db_path, read_only=True)
-        df_preview = conn.execute("SELECT * FROM jobs LIMIT 5").df()
-        conn.close()
+        df_preview = pd.read_sql_query("SELECT * FROM jobs LIMIT 5", sqlite_conn)
         st.dataframe(df_preview)
     except Exception as e:
         st.error(f"Gagal memuat preview data: {e}")
