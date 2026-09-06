@@ -1,12 +1,15 @@
 import os
 import streamlit as st
-import duckdb
 from langchain_community.llms import Replicate
 from langchain_community.utilities import SQLDatabase
 from langchain_community.agent_toolkits import create_sql_agent
 
 # Config halaman Streamlit
-st.set_page_config(page_title="Job Insights - IBM Granite", page_icon="💼")
+st.set_page_config(
+    page_title="Job Insights - IBM Granite", 
+    page_icon="💼",
+    layout="wide"
+)
 
 # ======================================
 # 1. Ambil API Token dari Streamlit Secrets / Environment Variable
@@ -18,26 +21,28 @@ else:
     replicate_token = os.getenv("REPLICATE_API_TOKEN")
 
 if not replicate_token:
-    st.error("❌ REPLICATE_API_TOKEN tidak ditemukan. Set di Streamlit Secrets atau .env!")
+    st.error("❌ REPLICATE_API_TOKEN tidak ditemukan. Harap set di Streamlit Secrets atau .env!")
     st.stop()
 
 
 # ======================================
-# 2. Inisialisasi DuckDB & Konek ke File Parquet
+# 2. Inisialisasi DuckDB In-Memory & Parquet View
 # ======================================
 @st.cache_resource
 def init_db():
+    # Direct download link Parquet dari Hugging Face
     parquet_path = "https://huggingface.co/datasets/barisetiawan51-code/job_dataset/resolve/main/job_datasett.parquet"
     
-    # Buat file database SQLite/DuckDB lokal sementara
-    conn = duckdb.connect("jobs_data.db")
+    # 1. Gunakan database in-memory agar tidak memicu error permission/file lock
+    db = SQLDatabase.from_uri("duckdb:///:memory:")
     
-    # Buat view virtual dari Parquet
+    # 2. Ambil koneksi DuckDB internal
+    conn = db._engine.raw_connection().connection
+    
+    # 3. Nonaktifkan pengecekan ETag dan buat View virtual dari Parquet
+    conn.execute("SET unsafe_disable_etag_checks = true;")
     conn.execute(f"CREATE VIEW IF NOT EXISTS jobs AS SELECT * FROM read_parquet('{parquet_path}')")
-    conn.close()
     
-    # Hubungkan ke SQLDatabase milik LangChain via SQLAlchemy DuckDB dialect
-    db = SQLDatabase.from_uri("duckdb:///jobs_data.db")
     return db
 
 try:
@@ -48,7 +53,7 @@ except Exception as e:
 
 
 # ======================================
-# 3. Inisialisasi LLM
+# 3. Inisialisasi LLM IBM Granite
 # ======================================
 llm = Replicate(
     model="ibm-granite/granite-3.3-8b-instruct",
@@ -64,7 +69,6 @@ llm = Replicate(
 # ======================================
 # 4. Buat SQL Agent (Pengganti Pandas Agent)
 # ======================================
-# SQL Agent membaca skema DuckDB tanpa memuat seluruh file ke RAM
 agent_executor = create_sql_agent(
     llm=llm,
     db=db,
@@ -77,19 +81,19 @@ agent_executor = create_sql_agent(
 # ======================================
 # 5. Streamlit UI
 # ======================================
-st.title("💼 Job Insights dengan Granite + DuckDB")
+st.title("💼 Job Insights dengan IBM Granite + DuckDB")
 st.write("Tanyakan pertanyaan seputar lowongan kerja, contoh: "
          "*berapa banyak postingan job di bidang digital marketing pada tahun 2022?*")
 
 query = st.text_input("Pertanyaan:")
 
-if st.button("Tanyakan"):
+if st.button("Tanyakan", type="primary"):
     if not query.strip():
         st.warning("Silakan masukkan pertanyaan terlebih dahulu.")
     else:
-        with st.spinner("Granite sedang menganalisis data via DuckDB..."):
+        with st.spinner("IBM Granite sedang menganalisis data via DuckDB..."):
             try:
-                # Menjalankan query SQL berbasis agent
+                # Eksekusi query via SQL Agent
                 response = agent_executor.run(query)
                 st.success("Jawaban Granite Agent:")
                 st.write(response)
@@ -101,8 +105,9 @@ if st.button("Tanyakan"):
 # 6. Tampilkan Pratinjau Data (Sampling)
 # ======================================
 with st.expander("📊 Lihat data awal (5 Baris Pertama)"):
-    # Query SQL ringan menggunakan DuckDB langsung
-    conn = duckdb.connect("jobs_data.db")
-    df_preview = conn.execute("SELECT * FROM jobs LIMIT 5").df()
-    conn.close()
-    st.dataframe(df_preview)
+    try:
+        conn = db._engine.raw_connection().connection
+        df_preview = conn.execute("SELECT * FROM jobs LIMIT 5").df()
+        st.dataframe(df_preview)
+    except Exception as e:
+        st.error(f"Gagal memuat preview data: {e}")
