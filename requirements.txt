@@ -1,7 +1,6 @@
 streamlit
 pandas
-datasets
-huggingface_hub
+pyarrow
 langchain
 langchain-community
 langchain-experimental
