@@ -1,8 +1,8 @@
 import os
+import duckdb
 import pandas as pd
 import streamlit as st
-import duckdb
-from sqlalchemy import create_engine, text
+from sqlalchemy import create_engine
 from huggingface_hub import hf_hub_download
 from langchain_huggingface import HuggingFaceEndpoint
 from langchain_community.utilities import SQLDatabase
@@ -30,8 +30,25 @@ if not hf_token:
 
 
 # ======================================
-# 2. Inisialisasi DuckDB via Native Shared Memory Session
+# 2. Inisialisasi DuckDB Native dengan Wrapper DBAPI SQLAlchemy
 # ======================================
+class DuckDBConnectionWrapper:
+    """Wrapper untuk menyesuaikan koneksi DuckDB dengan ekspektasi DBAPI SQLAlchemy 2.0"""
+    def __init__(self, conn):
+        self._conn = conn
+
+    @property
+    def connection(self):
+        return self._conn
+
+    @property
+    def driver_connection(self):
+        return self._conn
+
+    def __getattr__(self, attr):
+        return getattr(self._conn, attr)
+
+
 @st.cache_resource
 def get_db():
     try:
@@ -43,34 +60,26 @@ def get_db():
             token=hf_token
         )
         
-        # 1. Buat koneksi native DuckDB
-        native_conn = duckdb.connect(":memory:")
-        native_conn.execute("SET unsafe_disable_etag_checks = true;")
-        native_conn.execute(f"CREATE VIEW jobs AS SELECT * FROM read_parquet('{local_parquet_path}');")
+        # 1. Buat koneksi native DuckDB di memori
+        raw_conn = duckdb.connect(":memory:")
+        raw_conn.execute("SET unsafe_disable_etag_checks = true;")
+        raw_conn.execute(f"CREATE VIEW jobs AS SELECT * FROM read_parquet('{local_parquet_path}');")
         
-        # 2. Buat pembungkus DBAPI custom agar SQLAlchemy 2.0 menerima native_conn tanpa error atribut
-        class DBAPIProxy:
-            def __init__(self, conn):
-                self.conn = conn
-                self.driver_connection = conn
-                
-            def __getattr__(self, item):
-                return getattr(self.conn, item)
-
-        proxy_conn = DBAPIProxy(native_conn)
-
-        # 3. Paksa SQLAlchemy Engine untuk SELALU memakai koneksi DuckDB yang sama
-        engine = create_engine("duckdb:///:memory:", creator=lambda: proxy_conn)
+        # 2. Bungkus koneksi agar memiliki properti .connection dan .driver_connection
+        wrapped_conn = DuckDBConnectionWrapper(raw_conn)
+        
+        # 3. Buat SQLAlchemy Engine menggunakan koneksi persisten yang dibungkus
+        engine = create_engine("duckdb:///:memory:", creator=lambda: wrapped_conn)
         
         # 4. Inisialisasi SQLDatabase dari LangChain
         db = SQLDatabase(engine)
-        return db, engine, native_conn
+        return db, raw_conn
         
     except Exception as e:
         st.error(f"Gagal mengunduh/memuat Parquet: {e}")
         st.stop()
 
-db, engine, native_conn = get_db()
+db, raw_conn = get_db()
 
 
 # ======================================
@@ -111,7 +120,6 @@ if st.button("Tanyakan", type="primary"):
     else:
         with st.spinner("IBM Granite sedang menganalisis data via DuckDB..."):
             try:
-                # Gunakan invoke untuk kompatibilitas LangChain terbaru
                 result = agent_executor.invoke({"input": query})
                 response_text = result.get("output", result) if isinstance(result, dict) else result
                 st.success("Jawaban IBM Granite Agent:")
@@ -125,8 +133,8 @@ if st.button("Tanyakan", type="primary"):
 # ======================================
 with st.expander("📊 Lihat data awal (5 Baris Pertama)"):
     try:
-        # Eksekusi preview langsung melalui native connection DuckDB
-        df_preview = native_conn.execute("SELECT * FROM jobs LIMIT 5").df()
+        # Menggunakan koneksi native DuckDB secara langsung
+        df_preview = raw_conn.execute("SELECT * FROM jobs LIMIT 5").df()
         st.dataframe(df_preview)
     except Exception as e:
         st.error(f"Gagal memuat preview data: {e}")
