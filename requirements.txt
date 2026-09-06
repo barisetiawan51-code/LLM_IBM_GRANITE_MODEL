@@ -1,9 +1,8 @@
-streamlit>=1.35.0
-pandas>=2.0.0
-pyarrow>=15.0.0
-fastparquet>=2024.2.0
-sqlalchemy>=2.0.0
-huggingface-hub>=0.23.0
-langchain>=0.2.0
-langchain-community>=0.2.0
-langchain-huggingface>=0.0.3
+streamlit==1.38.0
+pandas==2.2.2
+pyarrow==17.0.0
+sqlalchemy==2.0.35
+huggingface-hub==0.24.7
+langchain==0.2.16
+langchain-community==0.2.16
+langchain-huggingface==0.0.3
