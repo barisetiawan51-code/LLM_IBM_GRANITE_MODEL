@@ -1,4 +1,5 @@
 import os
+import duckdb
 import pandas as pd
 import streamlit as st
 from sqlalchemy import create_engine
@@ -29,7 +30,7 @@ if not hf_token:
 
 
 # ======================================
-# 2. Inisialisasi DuckDB via SQLAlchemy (:memory:)
+# 2. Inisialisasi DuckDB & SQLAlchemy
 # ======================================
 @st.cache_resource(show_spinner="Sedang mengunduh dataset dan menyiapkan database...")
 def get_db(token: str):
@@ -41,16 +42,15 @@ def get_db(token: str):
         token=token
     )
 
-    # 2. Buat in-memory DuckDB engine langsung via SQLAlchemy
-    # Menggunakan :memory: menghindari konflik konfigurasi file dan file lock
-    engine = create_engine("duckdb:///:memory:")
+    # 2. Buat satu raw connection in-memory agar data tidak lenyap
+    raw_conn = duckdb.connect(":memory:")
+    raw_conn.execute(f"""
+        CREATE TABLE jobs AS 
+        SELECT * FROM read_parquet('{local_parquet_path}');
+    """)
 
-    # 3. Buat tabel jobs langsung menggunakan koneksi engine yang sama
-    with engine.connect() as conn:
-        conn.exec_driver_sql(f"""
-            CREATE TABLE jobs AS 
-            SELECT * FROM read_parquet('{local_parquet_path}');
-        """)
+    # 3. Ikat engine ke raw connection yang sama via creator
+    engine = create_engine("duckdb:///:memory:", creator=lambda: raw_conn)
 
     # 4. Hubungkan ke LangChain SQLDatabase
     db = SQLDatabase(
@@ -73,7 +73,6 @@ except Exception as e:
 # ======================================
 @st.cache_resource
 def get_llm(token: str):
-    # streaming=False dan task='text-generation' mencegah error 'generator raised StopIteration'
     return HuggingFaceEndpoint(
         repo_id="ibm-granite/granite-3.0-8b-instruct",
         huggingfacehub_api_token=token,
