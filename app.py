@@ -1,5 +1,6 @@
 import os
 import streamlit as st
+from sqlalchemy import text
 from huggingface_hub import hf_hub_download
 from langchain_huggingface import HuggingFaceEndpoint
 from langchain_community.utilities import SQLDatabase
@@ -43,12 +44,11 @@ def init_db():
         # Buat database in-memory
         db = SQLDatabase.from_uri("duckdb:///:memory:")
         
-        # Perbaikan SADeprecationWarning: Gunakan driver_connection
-        raw_conn = db._engine.raw_connection()
-        conn = getattr(raw_conn, 'driver_connection', raw_conn.connection)
-        
-        # Buat View dari file Parquet lokal yang terunduh
-        conn.execute(f"CREATE VIEW IF NOT EXISTS jobs AS SELECT * FROM read_parquet('{local_parquet_path}')")
+        # Perbaikan SADeprecationWarning: Gunakan engine.connect() standar SQLAlchemy
+        with db._engine.connect() as conn:
+            conn.execute(text(f"CREATE VIEW IF NOT EXISTS jobs AS SELECT * FROM read_parquet('{local_parquet_path}')"))
+            conn.commit()
+            
         return db
         
     except Exception as e:
@@ -96,11 +96,10 @@ if st.button("Tanyakan", type="primary"):
     else:
         with st.spinner("IBM Granite sedang menganalisis data via DuckDB..."):
             try:
-                # Perbaikan LangChainDeprecationWarning: Gunakan invoke menggantikan run
+                # Eksekusi via invoke
                 result = agent_executor.invoke({"input": query})
-                
-                # Mengambil output jawaban
                 response_text = result.get("output", result) if isinstance(result, dict) else result
+                
                 st.success("Jawaban IBM Granite Agent:")
                 st.write(response_text)
             except Exception as e:
@@ -112,9 +111,10 @@ if st.button("Tanyakan", type="primary"):
 # ======================================
 with st.expander("📊 Lihat data awal (5 Baris Pertama)"):
     try:
-        raw_conn = db._engine.raw_connection()
-        conn = getattr(raw_conn, 'driver_connection', raw_conn.connection)
-        df_preview = conn.execute("SELECT * FROM jobs LIMIT 5").df()
+        # Perbaikan SADeprecationWarning: Menggunakan pandas read_sql
+        import pandas as pd
+        with db._engine.connect() as conn:
+            df_preview = pd.read_sql(text("SELECT * FROM jobs LIMIT 5"), conn)
         st.dataframe(df_preview)
     except Exception as e:
         st.error(f"Gagal memuat preview data: {e}")
