@@ -35,7 +35,7 @@ if not hf_token:
 @st.cache_resource
 def get_db():
     try:
-        # Unduh file Parquet dari Hugging Face
+        # 1. Unduh file Parquet dari Hugging Face
         local_parquet_path = hf_hub_download(
             repo_id="barisetiawan51-code/job_dataset",
             filename="job_dataset.parquet",
@@ -43,28 +43,38 @@ def get_db():
             token=hf_token
         )
         
-        # Buat database file DuckDB terisolasi
         db_file = "/tmp/jobs_app.duckdb"
         
-        # Inisialisasi view 'jobs' secara langsung di DuckDB
+        # Bersihkan file database lama jika ada sisa corrupt/stale schema
+        if os.path.exists(db_file):
+            try:
+                os.remove(db_file)
+            except Exception:
+                pass
+        
+        # 2. Buat tabel fisik permanen (bukan sekadar VIEW)
         conn = duckdb.connect(db_file)
-        conn.execute("SET unsafe_disable_etag_checks = true;")
-        conn.execute(f"CREATE VIEW IF NOT EXISTS jobs AS SELECT * FROM read_parquet('{local_parquet_path}');")
+        conn.execute(f"""
+            CREATE TABLE jobs AS 
+            SELECT * FROM read_parquet('{local_parquet_path}');
+        """)
         conn.close()
         
-        # Buat SQLAlchemy Engine agar dikenali oleh LangChain SQLDatabase
+        # 3. Hubungkan via SQLAlchemy Engine
         engine = create_engine(f"duckdb:///{db_file}")
         
-        # Hubungkan ke LangChain SQLDatabase
-        db = SQLDatabase(engine=engine, include_tables=["jobs"])
+        # 4. Inisialisasi SQLDatabase dengan view_support aktif (opsional tapi aman)
+        db = SQLDatabase(
+            engine=engine, 
+            include_tables=["jobs"],
+            view_support=True
+        )
+        
         return db, engine
         
     except Exception as e:
         st.error(f"Gagal mengunduh/memuat Parquet dari Hugging Face: {e}")
         st.stop()
-
-db, engine = get_db()
-
 
 # ======================================
 # 3. Inisialisasi IBM Granite via Hugging Face API
