@@ -9,7 +9,7 @@ from langchain_community.agent_toolkits import create_sql_agent
 
 # Config halaman Streamlit
 st.set_page_config(
-    page_title="Job Insights - IBM Granite (Gratis)", 
+    page_title="Job Insights - IBM Granite", 
     page_icon="💼",
     layout="wide"
 )
@@ -29,12 +29,12 @@ if not hf_token:
 
 
 # ======================================
-# 2. Inisialisasi DuckDB File-Based
+# 2. Inisialisasi DuckDB Persisten & Safe Connection
 # ======================================
 @st.cache_resource
 def get_db():
     try:
-        # Unduh file Parquet (Path yang benar di root repo)
+        # Unduh file Parquet dari Hugging Face
         local_parquet_path = hf_hub_download(
             repo_id="barisetiawan51-code/job_dataset",
             filename="job_dataset.parquet",
@@ -42,23 +42,23 @@ def get_db():
             token=hf_token
         )
         
-        db_path = "/tmp/jobs_duckdb.db"
+        db_file = "/tmp/jobs_persistent.duckdb"
         
-        # Buat database file DuckDB dan daftarkan view 'jobs'
-        conn = duckdb.connect(db_path)
+        # Buat/Perbarui view di file DuckDB lokal
+        conn = duckdb.connect(db_file)
         conn.execute("SET unsafe_disable_etag_checks = true;")
         conn.execute(f"CREATE VIEW IF NOT EXISTS jobs AS SELECT * FROM read_parquet('{local_parquet_path}');")
         conn.close()
         
-        # Hubungkan LangChain SQLDatabase ke DuckDB lokal
-        db = SQLDatabase.from_uri(f"duckdb:///{db_path}")
-        return db, db_path
+        # Hubungkan SQLDatabase LangChain ke DuckDB dengan mode read_only agar kompatibel multi-thread
+        db = SQLDatabase.from_uri(f"duckdb:///{db_file}?read_only=true")
+        return db, db_file
         
     except Exception as e:
         st.error(f"Gagal mengunduh/memuat Parquet dari Hugging Face: {e}")
         st.stop()
 
-db, db_path = get_db()
+db, db_file = get_db()
 
 
 # ======================================
@@ -112,7 +112,7 @@ if st.button("Tanyakan", type="primary"):
 # ======================================
 with st.expander("📊 Lihat data awal (5 Baris Pertama)"):
     try:
-        # Gunakan engine milik LangChain untuk preview agar tidak bentrok koneksi
+        # Gunakan engine internal milik db LangChain untuk query preview agar tidak bentrok koneksi
         df_preview = pd.read_sql_query("SELECT * FROM jobs LIMIT 5", db._engine)
         st.dataframe(df_preview)
     except Exception as e:
